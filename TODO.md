@@ -38,7 +38,7 @@
 - [x] **C9** `feat(engine): volunteer scoring function`
   - scoreVolunteer() pure function
   - Types in types.ts
-- [ ] **C10** `feat(engine): reconcileTask reassignment engine`
+- [x] **C10** `feat(engine): reconcileTask reassignment engine`
   - Full flow, returns notifications
 
 ## Phase 5 — API routes (hours 11–16)
@@ -72,6 +72,7 @@
 - [ ] **C18.6** `feat(ai): LLM conflict resolver + UI`
 
 ## Phase 10 — Real auth (hours 32–35)
+- [ ] Restore profiles.id FK to auth.users before C20 seed reset
 - [ ] **C20** `feat(auth): supabase auth integration`
 
 ## Phase 11 — Ship it (hours 35–36)
