@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { devFetch } from '@/lib/dev/dev-fetch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -28,6 +28,8 @@ export default function VolunteerDashboard() {
   const [volunteerName, setVolunteerName] = useState('');
   const [loading, setLoading] = useState(true);
   const [hasVolunteerRow, setHasVolunteerRow] = useState<boolean | null>(null);
+  const [volunteerId, setVolunteerId] = useState<string | null>(null);
+  const loadDataRef = useRef<() => Promise<void>>(async () => {});
 
   const loadData = useCallback(async () => {
     try {
@@ -53,10 +55,12 @@ export default function VolunteerDashboard() {
 
       if (!vol) {
         setHasVolunteerRow(false);
+        setVolunteerId(null);
         return;
       }
 
       setHasVolunteerRow(true);
+      setVolunteerId(vol.id);
 
       const { data: myAssignments } = await supabase
         .from('assignments')
@@ -93,9 +97,36 @@ export default function VolunteerDashboard() {
     }
   }, []);
 
+  loadDataRef.current = loadData;
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!volunteerId) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`my-assignments-${volunteerId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'assignments',
+          filter: `volunteer_id=eq.${volunteerId}`,
+        },
+        () => {
+          void loadDataRef.current();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [volunteerId]);
 
   const handleDrop = async (assignmentId: string, taskName: string) => {
     const confirmed = window.confirm(
@@ -162,11 +193,12 @@ export default function VolunteerDashboard() {
           Your shifts, briefings, and updates in one place.
         </p>
       </div>
-      {/* Personalized Briefing */}
-      <Card className="border-blue-200/80 bg-gradient-to-br from-blue-50/90 to-background shadow-sm dark:from-blue-950/30 dark:to-background">
-        <CardHeader className="space-y-1">
+
+      <Card className="rounded-xl border border-border/80 shadow-md overflow-hidden bg-card dark:bg-card">
+        <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-600" />
+        <CardHeader className="space-y-1 pt-5 border-l-4 border-indigo-500 pl-5 -ml-px">
           <CardTitle className="flex items-center gap-2 text-lg font-semibold">
-            <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <Zap className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
             Your briefing
           </CardTitle>
           <CardDescription className="text-base leading-relaxed">
@@ -175,7 +207,7 @@ export default function VolunteerDashboard() {
         </CardHeader>
         <CardContent className="pt-0">
           {!hasAnyAssignment ? (
-            <div className="rounded-lg border border-dashed bg-background/60 px-4 py-6 text-center">
+            <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-6 text-center">
               <p className="text-sm font-medium text-foreground">
                 No assignments yet — your coordinator will assign you soon.
               </p>
@@ -224,7 +256,6 @@ export default function VolunteerDashboard() {
         </CardContent>
       </Card>
 
-      {/* Active Assignments */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
           <Calendar className="h-5 w-5 text-muted-foreground" />
@@ -241,7 +272,10 @@ export default function VolunteerDashboard() {
             {activeAssignments.map(
               (a) =>
                 a.task && (
-                  <Card key={a.id} className="border-l-4 border-l-emerald-500/90 shadow-sm overflow-hidden">
+                  <Card
+                    key={a.id}
+                    className="rounded-lg border-l-4 border-l-emerald-500 shadow-sm transition-shadow duration-200 hover:shadow-md overflow-hidden"
+                  >
                     <CardContent className="py-5">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="space-y-1">
@@ -266,7 +300,7 @@ export default function VolunteerDashboard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40"
+                            className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/40"
                             onClick={() => handleDrop(a.id, a.task!.name)}
                           >
                             <AlertTriangle className="h-3.5 w-3.5 mr-1" />
@@ -282,7 +316,6 @@ export default function VolunteerDashboard() {
         )}
       </section>
 
-      {/* Waitlisted */}
       {waitlistedAssignments.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold tracking-tight">Waitlisted</h2>
@@ -292,7 +325,7 @@ export default function VolunteerDashboard() {
                 a.task && (
                   <Card
                     key={a.id}
-                    className="border-l-4 border-l-amber-400/90 opacity-90 shadow-sm"
+                    className="rounded-lg border-l-4 border-l-amber-400 shadow-sm transition-shadow duration-200 hover:shadow-md opacity-95"
                   >
                     <CardContent className="py-5">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

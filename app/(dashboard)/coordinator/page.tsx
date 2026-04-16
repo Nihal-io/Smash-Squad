@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ClipboardList, Users, Clock, Zap, Calendar } from 'lucide-react';
+import { ClipboardList, Users, Clock, Zap, Calendar, Activity } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -27,8 +27,19 @@ type UpcomingTask = {
   slot_start: string;
   slot_end: string;
   volunteers_needed: number;
+  skills_required: string[];
   assigned: number;
   fill_status: 'full' | 'partial' | 'empty';
+};
+
+type RecentRow = {
+  id: string;
+  assigned_at: string | null;
+  status: string | null;
+  tasks: { name: string } | { name: string }[] | null;
+  volunteers: {
+    profiles: { full_name: string | null } | { full_name: string | null }[] | null;
+  } | null;
 };
 
 const FILL_BADGE: Record<UpcomingTask['fill_status'], string> = {
@@ -40,21 +51,30 @@ const FILL_BADGE: Record<UpcomingTask['fill_status'], string> = {
 export default function CoordinatorDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingTask[]>([]);
+  const [recent, setRecent] = useState<RecentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     const supabase = createClient();
 
-    const [tasksRes, volRes, pendingRes, assignedRes, upcomingRes] = await Promise.all([
+    const [tasksRes, volRes, pendingRes, assignedRes, upcomingRes, recentRes] = await Promise.all([
       supabase.from('tasks').select('*', { count: 'exact', head: true }),
       supabase.from('volunteers').select('*', { count: 'exact', head: true }),
       supabase.from('volunteers').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('assignments').select('*', { count: 'exact', head: true }).eq('status', 'assigned'),
       supabase
         .from('tasks')
-        .select('id, name, slot_start, slot_end, volunteers_needed')
+        .select('id, name, slot_start, slot_end, volunteers_needed, skills_required')
         .order('slot_start', { ascending: true })
         .limit(40),
+      supabase
+        .from('assignments')
+        .select(
+          'id, assigned_at, status, tasks:task_id(name), volunteers:volunteer_id(profiles:profile_id(full_name))'
+        )
+        .not('assigned_at', 'is', null)
+        .order('assigned_at', { ascending: false })
+        .limit(5),
     ]);
 
     const ordered = upcomingRes.data ?? [];
@@ -88,6 +108,7 @@ export default function CoordinatorDashboard() {
         slot_start: t.slot_start,
         slot_end: t.slot_end,
         volunteers_needed: need,
+        skills_required: t.skills_required ?? [],
         assigned,
         fill_status,
       });
@@ -100,6 +121,7 @@ export default function CoordinatorDashboard() {
       activeAssignments: assignedRes.count ?? 0,
     });
     setUpcoming(upcomingBuilt);
+    setRecent((recentRes.data as RecentRow[] | null) ?? []);
     setLoading(false);
   }, []);
 
@@ -110,32 +132,28 @@ export default function CoordinatorDashboard() {
   const statDefs = stats
     ? [
         {
-          title: 'Total tasks',
+          title: 'Total Tasks',
           value: stats.totalTasks,
           icon: ClipboardList,
-          description: 'Scheduled shifts',
-          warn: false,
+          iconWrap: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300',
         },
         {
-          title: 'Total volunteers',
+          title: 'Volunteers',
           value: stats.totalVolunteers,
           icon: Users,
-          description: 'Registered in FestFlow',
-          warn: false,
+          iconWrap: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300',
         },
         {
-          title: 'Pending approvals',
+          title: 'Pending Approvals',
           value: stats.pendingApprovals,
           icon: Clock,
-          description: 'Applications awaiting review',
-          warn: stats.pendingApprovals > 0,
+          iconWrap: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200',
         },
         {
-          title: 'Active assignments',
+          title: 'Active Assignments',
           value: stats.activeAssignments,
           icon: Zap,
-          description: 'Volunteers currently assigned',
-          warn: false,
+          iconWrap: 'bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-300',
         },
       ]
     : [];
@@ -153,28 +171,27 @@ export default function CoordinatorDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {statDefs.map(({ title, value, icon: Icon, description, warn }) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {statDefs.map(({ title, value, icon: Icon, iconWrap }) => (
           <Card
             key={title}
-            className={cn(
-              'border-border/80 shadow-sm hover:shadow-md transition-shadow duration-200',
-              warn && 'ring-1 ring-amber-300/80 border-amber-200/60'
-            )}
+            className="border-border/80 shadow-sm hover:shadow-md transition-shadow duration-200"
           >
-            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-              <Icon
+            <CardContent className="flex gap-4 pt-6 pb-6">
+              <div
                 className={cn(
-                  'h-4 w-4 shrink-0',
-                  warn && value > 0 ? 'text-amber-600' : 'text-muted-foreground'
+                  'flex h-12 w-12 shrink-0 items-center justify-center rounded-full',
+                  iconWrap
                 )}
-                aria-hidden
-              />
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-3xl font-semibold tabular-nums tracking-tight">{value}</p>
-              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{description}</p>
+              >
+                <Icon className="h-6 w-6" aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  {title}
+                </p>
+                <p className="text-3xl font-semibold tabular-nums tracking-tight mt-1">{value}</p>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -187,7 +204,7 @@ export default function CoordinatorDashboard() {
             <div>
               <CardTitle className="text-lg font-semibold">Upcoming tasks</CardTitle>
               <CardDescription className="mt-1">
-                Next shifts on the calendar — with live fill status.
+                Next shifts on the calendar — fill status and required skills.
               </CardDescription>
             </div>
           </div>
@@ -199,16 +216,29 @@ export default function CoordinatorDashboard() {
             upcoming.map((t) => (
               <div
                 key={t.id}
-                className="flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div>
+                <div className="space-y-2 min-w-0">
                   <p className="font-medium">{t.name}</p>
                   <p className="text-sm text-muted-foreground">
                     {format(parseISO(t.slot_start), 'EEE, MMM d · h:mm a')} –{' '}
                     {format(parseISO(t.slot_end), 'h:mm a')}
                   </p>
+                  <div className="flex flex-wrap gap-1">
+                    {(t.skills_required ?? []).length === 0 ? (
+                      <Badge variant="outline" className="text-xs font-normal">
+                        Open to all skills
+                      </Badge>
+                    ) : (
+                      t.skills_required.map((s) => (
+                        <Badge key={s} variant="secondary" className="text-xs font-normal">
+                          {s}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {t.assigned}/{t.volunteers_needed} filled
                   </span>
@@ -218,6 +248,52 @@ export default function CoordinatorDashboard() {
                 </div>
               </div>
             ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-lg font-semibold">Recent activity</CardTitle>
+              <CardDescription className="mt-1">Latest assignment updates across tasks.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-0 divide-y rounded-md border bg-muted/20">
+          {recent.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No assignment activity yet.</p>
+          ) : (
+            recent.map((row) => {
+              const task = Array.isArray(row.tasks) ? row.tasks[0] : row.tasks;
+              const vol = row.volunteers;
+              const profNested = vol && (Array.isArray(vol.profiles) ? vol.profiles[0] : vol.profiles);
+              const name = profNested?.full_name ?? 'Volunteer';
+              const taskName = task?.name ?? 'Task';
+              const when = row.assigned_at
+                ? format(parseISO(row.assigned_at), 'MMM d, yyyy · h:mm a')
+                : '—';
+              return (
+                <div
+                  key={row.id}
+                  className="flex flex-col gap-0.5 py-3.5 px-1 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <p className="text-sm">
+                    <span className="font-medium">{name}</span>
+                    <span className="text-muted-foreground"> → </span>
+                    <span className="font-medium">{taskName}</span>
+                    {row.status ? (
+                      <Badge variant="outline" className="ml-2 text-[10px] capitalize">
+                        {row.status}
+                      </Badge>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-muted-foreground tabular-nums sm:text-right">{when}</p>
+                </div>
+              );
+            })
           )}
         </CardContent>
       </Card>

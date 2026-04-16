@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Bell } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { formatDistanceToNow, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 type Row = {
@@ -54,6 +55,30 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     if (open) void load();
   }, [open, load]);
 
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => {
+          void load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, load]);
+
   const unread = items.filter((n) => !n.read).length;
 
   const markRead = async (id: string) => {
@@ -74,13 +99,17 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         >
           <Bell className="h-5 w-5" />
           {unread > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
               {unread > 9 ? '9+' : unread}
             </span>
           ) : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-96 p-0" onCloseAutoFocus={(e) => e.preventDefault()}>
+      <DropdownMenuContent
+        align="end"
+        className="w-96 p-0 dark:bg-popover"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <div className="border-b px-3 py-2.5">
           <p className="text-sm font-semibold">Notifications</p>
           <p className="text-xs text-muted-foreground">Recent updates for your account</p>
@@ -94,23 +123,27 @@ export function NotificationBell({ userId }: NotificationBellProps) {
                 key={n.id}
                 type="button"
                 className={cn(
-                  'flex w-full flex-col gap-1 border-b px-3 py-3 text-left text-sm transition-colors last:border-0 hover:bg-muted/60',
+                  'flex w-full flex-col gap-1.5 border-b px-3 py-3 text-left text-sm transition-colors last:border-0 hover:bg-muted/60',
                   !n.read && 'bg-muted/30'
                 )}
                 onClick={() => void markRead(n.id)}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <span className={cn('font-medium leading-snug', !n.read && 'text-foreground')}>
-                    {n.subject}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="secondary" className="text-[10px] font-normal capitalize shrink-0">
+                    {n.kind.replace(/_/g, ' ')}
+                  </Badge>
                   {!n.read ? (
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-primary mt-1" aria-hidden />
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
                   ) : null}
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">{n.body}</p>
-                <p className="text-[10px] text-muted-foreground tabular-nums">
-                  {n.created_at ? format(parseISO(n.created_at), 'MMM d · h:mm a') : ''}
-                  <span className="ml-2 opacity-70">{n.kind}</span>
+                <span className={cn('font-medium leading-snug', !n.read && 'text-foreground')}>
+                  {n.subject}
+                </span>
+                <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">{n.body}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {n.created_at
+                    ? formatDistanceToNow(parseISO(n.created_at), { addSuffix: true })
+                    : ''}
                 </p>
               </button>
             ))

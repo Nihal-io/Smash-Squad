@@ -60,30 +60,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col">
-      <div
-        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-600/85 via-violet-600/75 to-purple-900/90"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(255,255,255,0.18),transparent_55%)]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(15,23,42,0.5),transparent)]"
-        aria-hidden
-      />
-
+    <div className="relative flex min-h-screen flex-col bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800">
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-6">
-        <Card className="w-full max-w-md border-0 shadow-xl shadow-indigo-950/25 bg-white/95 backdrop-blur-sm dark:bg-slate-950/95">
+        <Card className="w-full max-w-md rounded-xl border-0 shadow-xl bg-white dark:bg-slate-950">
           <CardHeader className="text-center space-y-4 pb-2 pt-8 px-8">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30">
-              <Zap className="h-8 w-8" strokeWidth={2.25} />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-indigo-100 dark:ring-slate-800">
+              <Zap className="h-8 w-8 text-indigo-600 dark:text-indigo-400" strokeWidth={2.25} />
             </div>
             <div>
               <CardTitle className="text-3xl font-semibold tracking-tight">FestFlow</CardTitle>
               <CardDescription className="mt-3 text-base text-muted-foreground">
-                Coordinate volunteers, tasks, and shifts in one calm workspace — built for high-trust events.
+                AI-powered volunteer coordination
               </CardDescription>
             </div>
           </CardHeader>
@@ -97,7 +84,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="coord@festflow.dev"
-                  className="h-11 bg-background"
+                  className="h-11 bg-background focus-visible:ring-indigo-500 dark:focus-visible:ring-indigo-400"
                   required
                 />
               </div>
@@ -109,11 +96,15 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="h-11 bg-background"
+                  className="h-11 bg-background focus-visible:ring-indigo-500 dark:focus-visible:ring-indigo-400"
                   required
                 />
               </div>
-              <Button type="submit" className="w-full h-11 text-base font-medium shadow-md" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full h-11 text-base font-medium bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={loading}
+              >
                 {loading ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
@@ -130,8 +121,8 @@ export default function LoginPage() {
         </Card>
       </div>
 
-      <footer className="relative z-10 pb-6 text-center">
-        <p className="text-sm text-white/70">Built for TechFest 2026 — volunteer coordination by FestFlow</p>
+      <footer className="relative z-10 pb-8 text-center">
+        <p className="text-sm text-indigo-200">Built for TechFest 2026</p>
       </footer>
     </div>
   );

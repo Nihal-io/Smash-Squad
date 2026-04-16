@@ -83,7 +83,7 @@ export default function VolunteersPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Volunteers</h1>
         <p className="text-muted-foreground mt-2 max-w-xl leading-relaxed">
-          Review and approve volunteer applications before they are assigned to tasks.
+          Review applications and manage your volunteer pool.
         </p>
       </div>
       {volunteers.length === 0 ? (

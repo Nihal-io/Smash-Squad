@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { devFetch } from '@/lib/dev/dev-fetch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,9 +43,9 @@ type AssignmentRow = {
 };
 
 const FILL_COLORS = {
-  full: 'bg-green-100 text-green-800',
-  partial: 'bg-yellow-100 text-yellow-800',
-  empty: 'bg-red-100 text-red-800',
+  full: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100',
+  partial: 'bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100',
+  empty: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100',
 };
 
 const TASK_BORDER: Record<Task['fill_status'], string> = {
@@ -82,6 +83,28 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks();
+  }, [fetchTasks]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel('coordinator-tasks-assignments')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'assignments',
+        },
+        () => {
+          void fetchTasks();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [fetchTasks]);
 
   const handleCreate = async () => {
@@ -210,7 +233,7 @@ export default function TasksPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Tasks</h1>
           <p className="text-muted-foreground mt-2 max-w-xl leading-relaxed">
-            Manage your event tasks, slots, and volunteer coverage in one place.
+            Manage event tasks and volunteer assignments.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -298,7 +321,7 @@ export default function TasksPage() {
               {tasks.map((t) => (
                 <Card
                   key={t.id}
-                  className={`border-l-4 ${TASK_BORDER[t.fill_status]} shadow-sm transition-shadow duration-200 hover:shadow-md`}
+                  className={`border-l-4 ${TASK_BORDER[t.fill_status]} shadow-sm transition-shadow duration-200 hover:shadow-md cursor-pointer`}
                 >
                   <CardContent className="py-4">
                     <div
