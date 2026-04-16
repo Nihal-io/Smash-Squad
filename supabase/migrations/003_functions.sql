@@ -1,0 +1,2 @@
+-- Reserved for future triggers and stored procedures.
+-- Post-event summary aggregation function will live here.

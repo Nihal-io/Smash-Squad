@@ -1,0 +1,118 @@
+# FestFlow — Cursor Rules
+
+You are assisting on FestFlow, a Next.js 15 volunteer coordination system for college fests, built under a 36-hour hackathon deadline. Architectural discipline matters more than cleverness. Follow these rules strictly.
+
+## Project context
+- Stack: Next.js 15 App Router, TypeScript, Tailwind, shadcn/ui, Supabase (auth + Postgres + RLS), Zod, react-hook-form, date-fns, react-big-calendar
+- LLM provider: runtime-selected from ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY — never hardcode a provider
+- Notifications: ConsoleNotifier only for now, swappable to Resend later via the Notifier interface
+- Auth: deferred to the end; use the dev role switcher pattern until Commit C20
+- Build order is defined in TODO.md — respect it, do not implement future commits early
+
+## Shell command handling
+Cursor's terminal integration is unreliable on this machine (Git Bash on Windows). Follow these rules:
+- Do not run npm install, npx, git, supabase, or any long-running command
+- Instead, tell the human: "Run this in your terminal: <command>"
+- Wait for the human to confirm the command succeeded before continuing
+- The human handles all git operations (add, commit, push)
+- If a task requires shell execution, STOP and give a clear command block, then wait
+
+## Non-negotiable architectural rules
+
+### The engine is the only thing that assigns volunteers
+- `reconcileTask` in `lib/assignment/engine.ts` is the sole authority for creating `assignments` rows with status 'assigned' or 'waitlist'
+- API routes call `reconcileTask` after any capacity-affecting change
+- Never let the LLM, UI, or any other code path directly insert assignment rows
+- Humans can only: create/edit/delete tasks, approve/reject volunteers, drop assignments
+
+### The LLM never writes to the database
+- LLM outputs are proposals, not actions
+- Option A (command parser): LLM returns structured intent → deterministic code dispatches to existing API routes
+- Option C (explanation): LLM returns a string attached to an already-made decision
+- Option D (conflict resolver): deterministic code generates the move pool, LLM returns indices, deterministic code executes
+
+### The Notifier never runs inside the engine
+- `reconcileTask` returns `{ filled, waitlisted, notifications: Notification[] }`
+- The API route calls `getNotifier().send(notifications)` after the engine returns
+
+### RBAC is a single source of truth
+- All permission checks route through `lib/rbac/permissions.ts` `can(role, action)`
+- Server routes use `requireRole()` from `lib/rbac/guard.ts`
+- Sidebar nav items filter via `can()`
+
+### Provider-agnostic LLM access
+- All LLM calls go through `getLLMClient()` which returns an `LLMClient` interface
+- Never import `@anthropic-ai/sdk` or `@google/generative-ai` outside `lib/ai/providers/`
+- Structured outputs use Zod schemas validated after the provider returns
+- Every LLM call has a try/catch with a deterministic fallback
+
+## File organization
+- Pure logic goes in `lib/*` — no React, no Next.js imports
+- Server-only code uses `lib/supabase/server.ts`; client code uses `lib/supabase/client.ts`
+- API routes are thin: validate → call lib functions → return JSON
+- Server components fetch data; client components handle interaction. 'use client' only when necessary
+- Don't modify shadcn components directly — extend via wrappers
+
+## Code style
+- TypeScript strict. No `any` — use `unknown` and narrow
+- Zod schemas colocated with their usage
+- Dates: always date-fns + ISO 8601 strings at API boundaries
+- Errors in API routes: `Response.json({ error: string }, { status: 4xx })`. Never throw raw.
+- No server actions — all mutations go through API routes
+
+## Database
+- Migrations numbered and additive
+- Every mutation goes through Supabase client
+- RLS is permissive in dev; mark tightening work with `// TODO(rls):` comments
+- Assignment status enforced at DB (check constraint) and Zod levels — keep in sync
+
+## UI
+- All forms use react-hook-form + Zod
+- Toasts via sonner — no alert() or window.confirm()
+- Loading states: skeletons for fetches, spinners for mutations
+- Calendar events are derived from tasks — pure view, no independent state
+
+## Commit discipline
+- One commit per TODO.md checkbox
+- Conventional commits: `feat(scope):`, `fix:`, `chore:`, `docs:`
+- Tick the box in TODO.md as part of the next commit
+- Split commits that exceed 300 lines of diff
+
+## What NOT to do
+- Do not add features not in TODO.md — suggest adding to "Future features" instead
+- Do not implement email until explicitly requested
+- Do not add drag-to-reschedule on calendar
+- Do not build admin pages beyond stubs until future phase
+- Do not add venues, participants, or certificates during core build
+- Do not use localStorage except for the dev role switcher
+- Do not install additional UI libraries
+- Do not add tests during hackathon except for scoreVolunteer sanity checks
+- Do not wrap everything in try/catch — catch only where there's a real fallback
+
+## When a request would violate a rule
+Stop and flag it: "This conflicts with [rule X] because [reason]. The intended pattern is [Y]. Want me to do it that way, or is there a reason to deviate?"
+
+## Hard timebox on Option D
+Commit C18.5/C18.6 has a hard timebox at hour 31. If fighting: `git revert`, stub the panel, move on. Do not let Option D cascade into lost auth or demo prep time.
+
+## Dev role switcher contract
+Until Commit C20, role is determined by:
+- Client: `useDevRole()` hook reading from localStorage, default 'coordinator'
+- Server: `getRoleServer(request)` reading `x-dev-role` header, default 'coordinator'
+
+Both helpers MUST check `process.env.NODE_ENV !== 'production'` and return null in production. Switcher UI renders only in dev.
+
+## Swap points
+- Console → Email: one line in `lib/notifications/index.ts`
+- Admin feature: entry in `permissions.ts`, sidebar item, page
+- Different LLM: different env var, no code change
+- Smarter scoring: make `scoreVolunteer` async — engine loop unchanged
+
+## Demo-critical
+- Seed produces a demoable state: 1 coordinator, 10 approved volunteers, 3 pre-created tasks
+- Console notifications must be readable at a glance
+- The command "need 3 people for stage setup tomorrow 2-4pm, must know electrical" must parse reliably
+- Calendar color-codes by fill status: green (full), amber (partial), red (empty)
+
+## User context
+The user is a CS undergraduate building this with a partner under real time pressure. Prioritize working code over elegant code, clear error messages, obvious next-step hints, and honest feedback if a request will eat more time than it's worth.
