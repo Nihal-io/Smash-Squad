@@ -49,12 +49,12 @@
   - Hello-world test
 
 ## Phase 6 — Volunteer UI (hours 16–18)
-- [ ] **C13** `feat(ui): volunteer registration form`
+- [x] **C13** `feat(ui): volunteer registration form`
 
 ## Phase 7 — Coordinator UI (hours 18–24)
-- [ ] **C14** `feat(ui): dashboard layout with role-gated sidebar`
-- [ ] **C15** `feat(ui): volunteer list with approval actions`
-- [ ] **C16a** `feat(ui): task table with create dialog`
+- [x] **C14** `feat(ui): dashboard layout with role-gated sidebar`
+- [x] **C15** `feat(ui): volunteer list with approval actions`
+- [x] **C16a** `feat(ui): task table with create dialog`
 - [ ] **C16b** `feat(ui): calendar view for tasks`
   - react-big-calendar, week view, color-coded
 - [ ] **C16.5** `feat(ai): natural language command parser`

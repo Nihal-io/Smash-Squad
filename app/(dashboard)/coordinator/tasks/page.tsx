@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { devFetch } from '@/lib/dev/dev-fetch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Plus } from 'lucide-react';
+import { Plus, Table, CalendarDays } from 'lucide-react';
+import { CommandBar } from '@/components/ai/command-bar';
+import { TaskCalendar } from '@/components/tasks/task-calendar';
 
 interface Task {
   id: string;
@@ -29,14 +32,16 @@ interface Task {
   fill_status: 'full' | 'partial' | 'empty';
 }
 
-interface Assignment {
+type AssignmentRow = {
   id: string;
   status: string;
   volunteer_name: string;
   volunteer_skills: string[];
-}
+  explanation?: string | null;
+  assigned_at?: string;
+};
 
-const FILL_COLORS: Record<Task['fill_status'], string> = {
+const FILL_COLORS = {
   full: 'bg-green-100 text-green-800',
   partial: 'bg-yellow-100 text-yellow-800',
   empty: 'bg-red-100 text-red-800',
@@ -47,9 +52,6 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [expandedTask, setExpandedTask] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [loadingAssignments, setLoadingAssignments] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -75,26 +77,6 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
-
-  const loadAssignments = async (taskId: string) => {
-    if (expandedTask === taskId) {
-      setExpandedTask(null);
-      return;
-    }
-
-    setExpandedTask(taskId);
-    setLoadingAssignments(true);
-    try {
-      const res = await devFetch(`/api/tasks/${taskId}/assignments`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setAssignments(data.assignments ?? []);
-    } catch {
-      setAssignments([]);
-    } finally {
-      setLoadingAssignments(false);
-    }
-  };
 
   const handleCreate = async () => {
     if (!form.name || !form.slot_start || !form.slot_end) {
@@ -128,13 +110,7 @@ export default function TasksPage() {
         `Task created - ${data.reconcile.filled} assigned, ${data.reconcile.still_short} still needed`
       );
       setDialogOpen(false);
-      setForm({
-        name: '',
-        slot_start: '',
-        slot_end: '',
-        volunteers_needed: 2,
-        skills_required: '',
-      });
+      setForm({ name: '', slot_start: '', slot_end: '', volunteers_needed: 2, skills_required: '' });
       fetchTasks();
     } catch {
       toast.error('Something went wrong');
@@ -143,23 +119,76 @@ export default function TasksPage() {
     }
   };
 
+  // Assignment detail state - shared between table and calendar
+  const [expandedTask, setExpandedTask] = useState<string | null>(null);
+  const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [promotedAssignmentIds, setPromotedAssignmentIds] = useState<Set<string>>(new Set());
+  const promotionSnapshotRef = useRef<Pick<AssignmentRow, 'id' | 'status'>[] | null>(null);
+
+  const loadAssignments = async (taskId: string, mode: 'toggle' | 'refresh' = 'toggle') => {
+    if (mode === 'toggle') {
+      if (expandedTask === taskId) {
+        setExpandedTask(null);
+        return;
+      }
+      setExpandedTask(taskId);
+    } else if (expandedTask !== taskId) {
+      return;
+    }
+
+    setLoadingAssignments(true);
+    try {
+      const res = await devFetch(`/api/tasks/${taskId}/assignments`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const next: AssignmentRow[] = data.assignments ?? [];
+      setAssignments(next);
+
+      if (mode === 'refresh' && promotionSnapshotRef.current) {
+        const prev = promotionSnapshotRef.current;
+        promotionSnapshotRef.current = null;
+        const promoted = next
+          .filter((n) => {
+            const p = prev.find((x) => x.id === n.id);
+            return p?.status === 'waitlist' && n.status === 'assigned';
+          })
+          .map((n) => n.id);
+        if (promoted.length > 0) {
+          setPromotedAssignmentIds(new Set(promoted));
+          window.setTimeout(() => setPromotedAssignmentIds(new Set()), 5000);
+        }
+      }
+    } catch {
+      setAssignments([]);
+    } finally {
+      setLoadingAssignments(false);
+    }
+  };
+
   const handleDrop = async (assignmentId: string) => {
     try {
+      promotionSnapshotRef.current = assignments.map((a) => ({ id: a.id, status: a.status }));
       const res = await devFetch(`/api/assignments/${assignmentId}/drop`, {
         method: 'POST',
         body: JSON.stringify({ reason: 'Manually dropped by coordinator' }),
       });
       const data = await res.json();
       if (!res.ok) {
+        promotionSnapshotRef.current = null;
         toast.error(data.error || 'Drop failed');
         return;
       }
       toast.success(`Dropped - ${data.refilled} refilled from waitlist`);
       fetchTasks();
+      // Brief delay so the engine's reassignment completes before we refetch
       if (expandedTask) {
-        loadAssignments(expandedTask);
+        window.setTimeout(() => {
+          void loadAssignments(expandedTask, 'refresh');
+        }, 300);
       }
     } catch {
+      promotionSnapshotRef.current = null;
       toast.error('Something went wrong');
     }
   };
@@ -170,6 +199,7 @@ export default function TasksPage() {
 
   return (
     <div>
+      <CommandBar onTaskCreated={fetchTasks} />
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Tasks</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -237,96 +267,137 @@ export default function TasksPage() {
         </Dialog>
       </div>
 
-      {tasks.length === 0 ? (
-        <p className="text-muted-foreground">No tasks yet. Create one above.</p>
-      ) : (
-        <div className="space-y-3">
-          {tasks.map((t) => (
-            <Card key={t.id}>
-              <CardContent className="py-4">
-                <div
-                  className="flex items-center justify-between cursor-pointer"
-                  onClick={() => loadAssignments(t.id)}
-                >
-                  <div>
-                    <p className="font-medium">{t.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(t.slot_start), 'MMM d, h:mm a')} -{' '}
-                      {format(new Date(t.slot_end), 'h:mm a')}
-                    </p>
-                    <div className="flex gap-1 mt-1">
-                      {t.skills_required.map((s) => (
-                        <Badge key={s} variant="outline" className="text-xs">
-                          {s}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        FILL_COLORS[t.fill_status]
-                      }`}
-                    >
-                      {t.counts.assigned}/{t.volunteers_needed}
-                    </span>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t.counts.waitlist} waitlisted
-                    </p>
-                  </div>
-                </div>
+      <Tabs defaultValue="table">
+        <TabsList>
+          <TabsTrigger value="table" className="gap-2">
+            <Table className="h-4 w-4" />
+            Table
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="gap-2">
+            <CalendarDays className="h-4 w-4" />
+            Calendar
+          </TabsTrigger>
+        </TabsList>
 
-                {expandedTask === t.id && (
-                  <div className="mt-3 pt-3 border-t">
-                    {loadingAssignments ? (
-                      <p className="text-sm text-muted-foreground">Loading...</p>
-                    ) : assignments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No assignments</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {assignments.map((a) => (
-                          <div
-                            key={a.id}
-                            className="flex items-center justify-between text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span>{a.volunteer_name}</span>
-                              <span
-                                className={`text-xs px-1.5 py-0.5 rounded ${
-                                  a.status === 'assigned'
-                                    ? 'bg-green-100 text-green-700'
-                                    : a.status === 'waitlist'
-                                    ? 'bg-yellow-100 text-yellow-700'
-                                    : 'bg-red-100 text-red-700'
+        <TabsContent value="table">
+          {tasks.length === 0 ? (
+            <p className="text-muted-foreground mt-4">No tasks yet.</p>
+          ) : (
+            <div className="space-y-3 mt-4">
+              {tasks.map((t) => (
+                <Card key={t.id}>
+                  <CardContent className="py-4">
+                    <div
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => loadAssignments(t.id)}
+                    >
+                      <div>
+                        <p className="font-medium">{t.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {format(new Date(t.slot_start), 'MMM d, h:mm a')} -{' '}
+                          {format(new Date(t.slot_end), 'h:mm a')}
+                        </p>
+                        <div className="flex gap-1 mt-1">
+                          {t.skills_required.map((s) => (
+                            <Badge key={s} variant="outline" className="text-xs">
+                              {s}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            FILL_COLORS[t.fill_status]
+                          }`}
+                        >
+                          {t.counts.assigned}/{t.volunteers_needed}
+                        </span>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t.counts.waitlist} waitlisted
+                        </p>
+                      </div>
+                    </div>
+
+                    {expandedTask === t.id && (
+                      <div className="mt-3 pt-3 border-t">
+                        {loadingAssignments ? (
+                          <p className="text-sm text-muted-foreground">Loading...</p>
+                        ) : assignments.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No assignments</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {assignments.map((a) => (
+                              <div
+                                key={a.id}
+                                className={`flex items-center justify-between text-sm rounded-md px-1 py-0.5 -mx-1 ${
+                                  promotedAssignmentIds.has(a.id)
+                                    ? 'bg-amber-100/80 ring-1 ring-amber-300/80'
+                                    : ''
                                 }`}
                               >
-                                {a.status}
-                              </span>
-                            </div>
-                            {a.status === 'assigned' && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-red-600 h-7"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDrop(a.id);
-                                }}
-                              >
-                                Drop
-                              </Button>
-                            )}
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                                  <span>{a.volunteer_name}</span>
+                                  {promotedAssignmentIds.has(a.id) && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                      Just promoted
+                                    </Badge>
+                                  )}
+                                  <span
+                                    className={`text-xs px-1.5 py-0.5 rounded ${
+                                      a.status === 'assigned'
+                                        ? 'bg-green-100 text-green-700'
+                                        : a.status === 'waitlist'
+                                        ? 'bg-yellow-100 text-yellow-700'
+                                        : 'bg-red-100 text-red-700'
+                                    }`}
+                                  >
+                                    {a.status}
+                                  </span>
+                                  {a.explanation && (
+                                    <span className="text-xs text-muted-foreground italic">
+                                      — {a.explanation}
+                                    </span>
+                                  )}
+                                </div>
+                                {a.status === 'assigned' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-red-600 h-7 shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDrop(a.id);
+                                    }}
+                                  >
+                                    Drop
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="calendar" className="mt-4">
+          <TaskCalendar
+            tasks={tasks}
+            onSelectTask={loadAssignments}
+            expandedTask={expandedTask}
+            assignments={assignments}
+            loadingAssignments={loadingAssignments}
+            onDrop={handleDrop}
+            promotedAssignmentIds={promotedAssignmentIds}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

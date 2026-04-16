@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type LLMProvider = 'claude' | 'gemini' | 'openai';
+export type LLMProvider = 'openrouter';
 
 export interface LLMClient {
   provider: LLMProvider;
@@ -20,20 +20,20 @@ export interface LLMClient {
   }): Promise<string>;
 }
 
+let instance: LLMClient | null = null;
+
 export function getLLMClient(): LLMClient {
-  // Implementations land in Commit C12.5. For now, throw clearly so anything
-  // calling this before C12.5 gets a useful error.
-  if (process.env.ANTHROPIC_API_KEY) {
-    throw new Error('LLM provider not yet implemented — ClaudeClient lands in Commit C12.5');
-  }
-  if (process.env.GEMINI_API_KEY) {
-    throw new Error('LLM provider not yet implemented — GeminiClient lands in Commit C12.5');
-  }
-  if (process.env.OPENAI_API_KEY) {
-    throw new Error('LLM provider not yet implemented — OpenAIClient lands in Commit C12.5');
+  if (instance) return instance;
+
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      'OPENROUTER_API_KEY not set. Get one at https://openrouter.ai/keys'
+    );
   }
 
-  throw new Error(
-    'No LLM API key set. Set ANTHROPIC_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY in .env.local'
-  );
+  // Dynamic import to avoid bundling in client
+  const { OpenRouterClient } = require('./providers/openrouter');
+  instance = new OpenRouterClient(apiKey);
+  return instance;
 }
