@@ -1,0 +1,2 @@
+app/api/health/
+app/api/rbac-test/
