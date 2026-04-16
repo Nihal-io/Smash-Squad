@@ -18,9 +18,9 @@ const ROLES: { value: Role; label: string }[] = [
 ];
 
 export function RoleSwitcher() {
-  if (process.env.NODE_ENV === 'production') return null;
-
   const [role, setRole] = useDevRole();
+
+  if (process.env.NEXT_PUBLIC_DEV_MODE !== 'true') return null;
 
   return (
     <div className="p-3 border-t">

@@ -16,53 +16,97 @@ import {
   BarChart3,
   Ticket,
   LogOut,
+  Sparkles,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  permission: Parameters<typeof can>[1];
+};
+
+const ALL_NAV: NavItem[] = [
   {
     href: '/coordinator',
     label: 'Dashboard',
     icon: LayoutDashboard,
-    permission: 'tasks.view' as const,
+    permission: 'tasks.view',
   },
   {
     href: '/coordinator/tasks',
     label: 'Tasks',
     icon: ClipboardList,
-    permission: 'tasks.view' as const,
+    permission: 'tasks.view',
   },
   {
     href: '/coordinator/volunteers',
     label: 'Volunteers',
     icon: Users,
-    permission: 'volunteers.viewAll' as const,
+    permission: 'volunteers.viewAll',
   },
   {
     href: '/admin',
     label: 'Admin',
     icon: LayoutDashboard,
-    permission: 'scrutiny.access' as const,
+    permission: 'scrutiny.access',
   },
   {
     href: '/admin/analytics',
     label: 'Analytics',
     icon: BarChart3,
-    permission: 'analytics.view' as const,
+    permission: 'analytics.view',
+  },
+  {
+    href: '/volunteer',
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    permission: 'tasks.view',
   },
   {
     href: '/volunteer/passes',
     label: 'My Passes',
     icon: Ticket,
-    permission: 'passes.viewOwn' as const,
+    permission: 'passes.viewOwn',
   },
 ];
+
+const COORDINATOR_HREFS = new Set(['/coordinator', '/coordinator/tasks', '/coordinator/volunteers']);
+const VOLUNTEER_HREFS = new Set(['/volunteer', '/volunteer/passes']);
+
+function navForRole(role: Role): NavItem[] {
+  if (role === 'admin') {
+    return ALL_NAV.filter((item) => {
+      if (item.href === '/volunteer/passes') return can(role, 'passes.viewAll');
+      return can(role, item.permission);
+    });
+  }
+  if (role === 'coordinator') {
+    return ALL_NAV.filter(
+      (item) => COORDINATOR_HREFS.has(item.href) && can(role, item.permission)
+    );
+  }
+  if (role === 'volunteer' || role === 'participant') {
+    return ALL_NAV.filter((item) => {
+      if (!VOLUNTEER_HREFS.has(item.href)) return false;
+      if (item.href === '/volunteer') return can(role, 'tasks.view');
+      if (item.href === '/volunteer/passes') {
+        if (role === 'volunteer') return true;
+        return can(role, 'passes.viewOwn');
+      }
+      return false;
+    });
+  }
+  return [];
+}
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [role, setRole] = useState<Role>('coordinator');
+  const [role, setRole] = useState<Role | null>(null);
+  const [roleReady, setRoleReady] = useState(false);
   const [userName, setUserName] = useState<string>('');
   const pathname = usePathname();
   const router = useRouter();
@@ -79,27 +123,33 @@ export default function DashboardLayout({
           .select('role, full_name')
           .eq('id', user.id)
           .single();
-        if (profile) {
+        if (profile?.role) {
           setRole(profile.role as Role);
           setUserName(profile.full_name ?? '');
         }
       }
+      setRoleReady(true);
     };
     void loadUser();
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem('festflow_dev_role') as Role | null;
-    if (stored) setRole(stored);
+    if (!roleReady || !role) return;
 
-    const handleStorage = () => {
-      const nextRole = localStorage.getItem('festflow_dev_role') as Role | null;
-      if (nextRole) setRole(nextRole);
-    };
+    const isVolunteerZone = pathname.startsWith('/volunteer') && pathname !== '/volunteer/register';
+    const isCoordinatorZone = pathname.startsWith('/coordinator');
+    const isAdminZone = pathname.startsWith('/admin');
 
-    window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+    if (role === 'volunteer' || role === 'participant') {
+      if (isCoordinatorZone || isAdminZone) {
+        router.replace('/volunteer');
+      }
+    } else if (role === 'coordinator') {
+      if (isVolunteerZone || isAdminZone) {
+        router.replace('/coordinator');
+      }
+    }
+  }, [roleReady, role, pathname, router]);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -107,54 +157,68 @@ export default function DashboardLayout({
     router.push('/login');
   };
 
-  const visibleNav = NAV_ITEMS.filter((item) => can(role, item.permission));
+  const visibleNav = role ? navForRole(role) : [];
+
+  const headerLabel =
+    visibleNav.find((n) => n.href === pathname)?.label ?? 'FestFlow';
+
+  const showDevRoleSwitcher = process.env.NEXT_PUBLIC_DEV_MODE === 'true';
 
   return (
-    <div className="flex h-screen">
-      <aside className="w-64 border-r bg-muted/40 flex flex-col">
-        <div className="p-4 border-b">
-          <h1 className="text-xl font-bold">FestFlow</h1>
-          <Badge variant="outline" className="mt-1 capitalize">
-            {role}
-          </Badge>
+    <div className="flex h-screen bg-background">
+      <aside className="w-64 border-r bg-muted/30 flex flex-col shrink-0">
+        <div className="p-4 border-b space-y-2">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <h1 className="text-lg font-semibold tracking-tight">FestFlow</h1>
+          </div>
+          {role && (
+            <Badge variant="outline" className="capitalize text-xs font-normal">
+              {role}
+            </Badge>
+          )}
         </div>
-        <nav className="flex-1 p-2 space-y-1">
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                  active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+          {roleReady && role
+            ? visibleNav.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                      active
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0 opacity-90" />
+                    {item.label}
+                  </Link>
+                );
+              })
+            : null}
         </nav>
-        <RoleSwitcher />
+        {showDevRoleSwitcher ? <RoleSwitcher /> : null}
       </aside>
 
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-14 border-b flex items-center justify-between px-6">
-          <h2 className="text-lg font-semibold">
-            {visibleNav.find((n) => n.href === pathname)?.label ?? 'FestFlow'}
-          </h2>
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="h-14 border-b flex items-center justify-between px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <h2 className="text-lg font-semibold tracking-tight">{headerLabel}</h2>
           <div className="flex items-center gap-3">
-            {userName && (
+            {userName ? (
               <span className="text-sm text-muted-foreground">{userName}</span>
-            )}
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => void handleLogout()}>
-              <LogOut className="h-4 w-4 mr-1" />
+              <LogOut className="h-4 w-4 mr-1.5" />
               Logout
             </Button>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-6">{children}</div>
+        <div className="flex-1 overflow-auto p-6 md:p-8">{children}</div>
       </main>
     </div>
   );

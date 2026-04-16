@@ -53,25 +53,14 @@ export async function POST(
     approvalNotification({ full_name: profile.full_name, email: profile.email }),
   ];
 
-  const volunteerSkills = (volunteer.skills ?? []).map((s: string) =>
-    s.toLowerCase()
-  );
-
   const { data: candidateTasks } = await supabase
     .from('tasks')
-    .select('id, skills_required, volunteers_needed');
+    .select('id, name, volunteers_needed');
 
-  const tasksToReconcile: string[] = [];
+  const tasksToReconcile: { id: string; name: string }[] = [];
+
   if (candidateTasks) {
     for (const t of candidateTasks) {
-      const required = (t.skills_required ?? []).map((s: string) =>
-        s.toLowerCase()
-      );
-      const overlap =
-        required.length === 0 ||
-        required.some((s: string) => volunteerSkills.includes(s));
-      if (!overlap) continue;
-
       const { count } = await supabase
         .from('assignments')
         .select('id', { count: 'exact', head: true })
@@ -79,14 +68,19 @@ export async function POST(
         .eq('status', 'assigned');
 
       if ((count ?? 0) < t.volunteers_needed) {
-        tasksToReconcile.push(t.id);
+        tasksToReconcile.push({ id: t.id, name: t.name });
       }
     }
   }
 
+  console.log(
+    '[approve] reconciling understaffed tasks:',
+    tasksToReconcile.map((x) => `${x.name} (${x.id})`).join(', ') || '(none)'
+  );
+
   const reconcileResults = [];
-  for (const taskId of tasksToReconcile) {
-    const result = await reconcileTask(taskId, supabase);
+  for (const task of tasksToReconcile) {
+    const result = await reconcileTask(task.id, supabase);
     reconcileResults.push(result);
     notifications.push(...result.notifications);
   }

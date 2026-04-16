@@ -15,7 +15,6 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { createClient } from '@/lib/supabase/client';
 
 const schema = z.object({
   full_name: z.string().min(1, 'Name required'),
@@ -33,11 +32,6 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
-
-// Demo limitation: /api/volunteers/register creates a profile row with a random id;
-// signUp creates a separate auth user id. Profile id and auth user id will not match,
-// so getRoleServer(profile by session id) will not find self-registered users. Use
-// seeded accounts to demo volunteer login; coordinators still see pending volunteers.
 
 export default function VolunteerRegisterPage() {
   const [submitting, setSubmitting] = useState(false);
@@ -97,20 +91,10 @@ export default function VolunteerRegisterPage() {
         return;
       }
 
-      const generatedPassword = data.full_name.toLowerCase().replace(/\s+/g, '') + '123';
-      setCredentials({ email: data.email, password: generatedPassword });
+      const email = typeof result.email === 'string' ? result.email : data.email;
+      const password = typeof result.password === 'string' ? result.password : '';
 
-      const supabase = createClient();
-      const { error: signUpErr } = await supabase.auth.signUp({
-        email: data.email,
-        password: generatedPassword,
-      });
-
-      if (signUpErr) {
-        toast.error(signUpErr.message);
-        return;
-      }
-
+      setCredentials({ email, password });
       toast.success('Registration submitted! Awaiting approval. You can now log in.');
       setSubmitted(true);
     } catch {
@@ -140,10 +124,6 @@ export default function VolunteerRegisterPage() {
                 Password: <code>{credentials.password}</code>
               </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Note: for the full volunteer dashboard experience, use a seeded account (e.g. priya@festflow.dev) after running{' '}
-              <code className="text-xs">npm run seed</code>.
-            </p>
             <Button asChild className="w-full">
               <a href="/login">Go to Login</a>
             </Button>

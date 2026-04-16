@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
-import { Calendar, Clock, Zap, AlertTriangle } from 'lucide-react';
+import { Calendar, Clock, Zap, AlertTriangle, Inbox } from 'lucide-react';
 
 interface MyAssignment {
   id: string;
@@ -27,6 +27,7 @@ export default function VolunteerDashboard() {
   const [assignments, setAssignments] = useState<MyAssignment[]>([]);
   const [volunteerName, setVolunteerName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [hasVolunteerRow, setHasVolunteerRow] = useState<boolean | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -36,7 +37,6 @@ export default function VolunteerDashboard() {
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Get profile name
       const { data: profile } = await supabase
         .from('profiles')
         .select('full_name')
@@ -45,19 +45,24 @@ export default function VolunteerDashboard() {
 
       if (profile) setVolunteerName(profile.full_name ?? '');
 
-      // Get volunteer id
       const { data: vol } = await supabase
         .from('volunteers')
         .select('id')
         .eq('profile_id', user.id)
         .single();
 
-      if (!vol) return;
+      if (!vol) {
+        setHasVolunteerRow(false);
+        return;
+      }
 
-      // Get assignments with task details
+      setHasVolunteerRow(true);
+
       const { data: myAssignments } = await supabase
         .from('assignments')
-        .select('id, status, assigned_at, tasks:task_id(id, name, slot_start, slot_end, skills_required)')
+        .select(
+          'id, status, assigned_at, tasks:task_id(id, name, slot_start, slot_end, skills_required)'
+        )
         .eq('volunteer_id', vol.id)
         .in('status', ['assigned', 'waitlist'])
         .order('assigned_at', { ascending: true });
@@ -89,7 +94,7 @@ export default function VolunteerDashboard() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   const handleDrop = async (assignmentId: string, taskName: string) => {
@@ -117,121 +122,174 @@ export default function VolunteerDashboard() {
 
   const activeAssignments = assignments.filter((a) => a.status === 'assigned');
   const waitlistedAssignments = assignments.filter((a) => a.status === 'waitlist');
+  const hasAnyAssignment = assignments.length > 0;
 
   if (loading) {
-    return <p className="text-muted-foreground">Loading your dashboard...</p>;
+    return (
+      <p className="text-muted-foreground text-sm">Loading your dashboard…</p>
+    );
+  }
+
+  if (hasVolunteerRow === false) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <Card className="border-muted/80 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+              <Inbox className="h-5 w-5 text-muted-foreground" />
+              Volunteer profile
+            </CardTitle>
+            <CardDescription>
+              We don&apos;t have a volunteer record linked to your account yet. Register or ask a coordinator to
+              add you.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <a href="/volunteer/register">Register as a volunteer</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto space-y-8">
       {/* Personalized Briefing */}
-      <Card className="mb-6 border-blue-200 bg-blue-50/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-blue-600" />
-            Your Briefing
+      <Card className="border-blue-200/80 bg-gradient-to-br from-blue-50/90 to-background shadow-sm dark:from-blue-950/30 dark:to-background">
+        <CardHeader className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+            <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            Your briefing
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-base leading-relaxed">
             {volunteerName ? `Hey ${volunteerName.split(' ')[0]}!` : 'Hey!'} Here is your schedule overview.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {activeAssignments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No active assignments yet. You will be notified when you are assigned to a task.
-            </p>
+        <CardContent className="pt-0">
+          {!hasAnyAssignment ? (
+            <div className="rounded-lg border border-dashed bg-background/60 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-foreground">
+                No assignments yet — your coordinator will assign you soon.
+              </p>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Check back here for shifts, waitlist spots, and drop options once you&apos;re placed on a task.
+              </p>
+            </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-sm">
-                You have <strong>{activeAssignments.length} active assignment{activeAssignments.length !== 1 ? 's' : ''}</strong>
-                {waitlistedAssignments.length > 0 && (
-                  <>
-                    {' '}
-                    and <strong>{waitlistedAssignments.length} waitlisted</strong>
-                  </>
-                )}
-                .
-              </p>
-              <div className="text-sm space-y-1">
-                {activeAssignments.map(
-                  (a) =>
-                    a.task && (
-                      <p key={a.id}>
-                        • <strong>{a.task.name}</strong> — {format(parseISO(a.task.slot_start), 'MMM d, h:mm a')} to{' '}
-                        {format(parseISO(a.task.slot_end), 'h:mm a')}
-                      </p>
-                    )
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Show up on time. If you cannot make it, use the Drop button below so a replacement can be found automatically.
-              </p>
+            <div className="space-y-3">
+              {activeAssignments.length === 0 ? (
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  No active assignments right now. You will be notified when you are assigned to a task.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm leading-relaxed">
+                    You have{' '}
+                    <strong>{activeAssignments.length} active assignment{activeAssignments.length !== 1 ? 's' : ''}</strong>
+                    {waitlistedAssignments.length > 0 && (
+                      <>
+                        {' '}
+                        and <strong>{waitlistedAssignments.length} waitlisted</strong>
+                      </>
+                    )}
+                    .
+                  </p>
+                  <div className="text-sm space-y-1.5">
+                    {activeAssignments.map(
+                      (a) =>
+                        a.task && (
+                          <p key={a.id}>
+                            • <strong>{a.task.name}</strong> — {format(parseISO(a.task.slot_start), 'MMM d, h:mm a')}{' '}
+                            to {format(parseISO(a.task.slot_end), 'h:mm a')}
+                          </p>
+                        )
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                    Show up on time. If you cannot make it, use the Drop button below so a replacement can be found
+                    automatically.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Active Assignments */}
-      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        <Calendar className="h-5 w-5" />
-        Active Assignments
-      </h2>
-      {activeAssignments.length === 0 ? (
-        <p className="text-muted-foreground text-sm mb-6">None currently.</p>
-      ) : (
-        <div className="space-y-3 mb-6">
-          {activeAssignments.map(
-            (a) =>
-              a.task && (
-                <Card key={a.id} className="border-l-4 border-l-green-500">
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{a.task.name}</p>
-                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {format(parseISO(a.task.slot_start), 'EEEE, MMM d · h:mm a')} –{' '}
-                          {format(parseISO(a.task.slot_end), 'h:mm a')}
-                        </p>
-                        <div className="flex gap-1 mt-2">
-                          {a.task.skills_required.map((s) => (
-                            <Badge key={s} variant="outline" className="text-xs">
-                              {s}
-                            </Badge>
-                          ))}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+          <Calendar className="h-5 w-5 text-muted-foreground" />
+          Active assignments
+        </h2>
+        {activeAssignments.length === 0 ? (
+          <Card className="border-dashed border-muted-foreground/25 shadow-none">
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              None currently — you&apos;ll see task cards here when you&apos;re assigned.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {activeAssignments.map(
+              (a) =>
+                a.task && (
+                  <Card key={a.id} className="border-l-4 border-l-emerald-500/90 shadow-sm overflow-hidden">
+                    <CardContent className="py-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="space-y-1">
+                          <p className="font-medium leading-snug">{a.task.name}</p>
+                          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5 shrink-0" />
+                            {format(parseISO(a.task.slot_start), 'EEEE, MMM d · h:mm a')} –{' '}
+                            {format(parseISO(a.task.slot_end), 'h:mm a')}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 pt-2">
+                            {a.task.skills_required.map((s) => (
+                              <Badge key={s} variant="outline" className="text-xs font-normal">
+                                {s}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 shrink-0">
+                          <Badge className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+                            Assigned
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40"
+                            onClick={() => handleDrop(a.id, a.task!.name)}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                            Drop
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <Badge className="bg-green-100 text-green-800">Assigned</Badge>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => handleDrop(a.id, a.task!.name)}
-                        >
-                          <AlertTriangle className="h-3 w-3 mr-1" />
-                          Drop
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-          )}
-        </div>
-      )}
+                    </CardContent>
+                  </Card>
+                )
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Waitlisted */}
       {waitlistedAssignments.length > 0 && (
-        <>
-          <h2 className="text-lg font-semibold mb-3">Waitlisted</h2>
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold tracking-tight">Waitlisted</h2>
           <div className="space-y-3">
             {waitlistedAssignments.map(
               (a) =>
                 a.task && (
-                  <Card key={a.id} className="border-l-4 border-l-yellow-500 opacity-75">
-                    <CardContent className="py-4">
-                      <div className="flex items-center justify-between">
+                  <Card
+                    key={a.id}
+                    className="border-l-4 border-l-amber-400/90 opacity-90 shadow-sm"
+                  >
+                    <CardContent className="py-5">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="font-medium">{a.task.name}</p>
                           <p className="text-sm text-muted-foreground">
@@ -239,14 +297,16 @@ export default function VolunteerDashboard() {
                             {format(parseISO(a.task.slot_end), 'h:mm a')}
                           </p>
                         </div>
-                        <Badge className="bg-yellow-100 text-yellow-800">Waitlisted</Badge>
+                        <Badge className="bg-amber-100 text-amber-950 w-fit dark:bg-amber-950 dark:text-amber-100">
+                          Waitlisted
+                        </Badge>
                       </div>
                     </CardContent>
                   </Card>
                 )
             )}
           </div>
-        </>
+        </section>
       )}
     </div>
   );
