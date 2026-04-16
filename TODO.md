@@ -17,25 +17,25 @@
   - Verify tables in Supabase dashboard
 - [X] **C4** `feat(db): RLS policies (permissive dev mode)`
   - Run 002_rls.sql in Supabase dashboard
-- [ ] **C5** `feat: typed database + supabase clients`
+- [x] **C5** `feat: typed database + supabase clients`
   - Generate types via `supabase gen types`
   - Implement three clients: browser, server, middleware
   - Wire root middleware.ts
 
 ## Phase 2 — RBAC & dev mode (hours 4–6)
-- [ ] **C6** `feat(rbac): role guard helper`
+- [x] **C6** `feat(rbac): role guard helper`
   - Implement guard.ts with requireRole()
-- [ ] **C7** `feat(dev): role switcher for pre-auth development`
+- [x] **C7** `feat(dev): role switcher for pre-auth development`
   - useDevRole() hook (localStorage)
   - getRoleServer() reading x-dev-role header
   - Floating RoleSwitcher component (dev only)
 
 ## Phase 3 — Notifications (hours 6–7)
-- [ ] **C8** `feat(notifications): notification templates`
+- [x] **C8** `feat(notifications): notification templates`
   - Template builder functions (pure)
 
 ## Phase 4 — Agent core (hours 7–11)
-- [ ] **C9** `feat(engine): volunteer scoring function`
+- [x] **C9** `feat(engine): volunteer scoring function`
   - scoreVolunteer() pure function
   - Types in types.ts
 - [ ] **C10** `feat(engine): reconcileTask reassignment engine`
