@@ -104,6 +104,7 @@ export default function DashboardLayout({
             );
           })}
         </nav>
+        <RoleSwitcher />
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -111,14 +112,9 @@ export default function DashboardLayout({
           <h2 className="text-lg font-semibold">
             {visibleNav.find((n) => n.href === pathname)?.label ?? 'FestFlow'}
           </h2>
-          <Badge variant="secondary" className="capitalize">
-            {role}
-          </Badge>
         </header>
         <div className="flex-1 overflow-auto p-6">{children}</div>
       </main>
-
-      <RoleSwitcher />
     </div>
   );
 }

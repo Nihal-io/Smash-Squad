@@ -1,17 +1,21 @@
-// components/dev/role-switcher.tsx — floating dev role switcher UI (Commit C7)
 'use client';
 
 import { useDevRole } from '@/lib/dev/use-dev-role';
 import type { Role } from '@/lib/rbac/permissions';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
-const ROLES: Role[] = ['admin', 'coordinator', 'volunteer', 'participant'];
-
-const ROLE_COLORS: Record<Role, string> = {
-  admin: 'bg-red-500',
-  coordinator: 'bg-blue-500',
-  volunteer: 'bg-green-500',
-  participant: 'bg-yellow-500',
-};
+const ROLES: { value: Role; label: string }[] = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'coordinator', label: 'Coordinator' },
+  { value: 'volunteer', label: 'Volunteer' },
+  { value: 'participant', label: 'Participant' },
+];
 
 export function RoleSwitcher() {
   if (process.env.NODE_ENV === 'production') return null;
@@ -19,28 +23,22 @@ export function RoleSwitcher() {
   const [role, setRole] = useDevRole();
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-        Dev Role
-      </div>
-      <div className="flex gap-1">
-        {ROLES.map((r) => (
-          <button
-            key={r}
-            onClick={() => setRole(r)}
-            className={`rounded px-2 py-1 text-xs font-medium transition ${
-              role === r
-                ? `${ROLE_COLORS[r]} text-white`
-                : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300'
-            }`}
-          >
-            {r}
-          </button>
-        ))}
-      </div>
-      <div className="text-[10px] text-neutral-400">
-        Current: <span className="font-mono">{role}</span>
-      </div>
+    <div className="p-3 border-t">
+      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+        Switch Role
+      </label>
+      <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+        <SelectTrigger className="h-8 text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ROLES.map((r) => (
+            <SelectItem key={r.value} value={r.value}>
+              {r.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

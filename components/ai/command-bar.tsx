@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Sparkles, Loader2, Check, X } from 'lucide-react';
+import { Sparkles, Loader2, Check, X, Send } from 'lucide-react';
 import type { CommandIntent } from '@/lib/ai/schemas';
 
 interface CommandBarProps {
@@ -17,7 +17,9 @@ interface CommandBarProps {
 export function CommandBar({ onTaskCreated }: CommandBarProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [executing, setExecuting] = useState(false);
   const [intent, setIntent] = useState<CommandIntent | null>(null);
+  const [result, setResult] = useState<{ summary: string; ok: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleParse = async () => {
@@ -25,6 +27,7 @@ export function CommandBar({ onTaskCreated }: CommandBarProps) {
     setLoading(true);
     setIntent(null);
     setError(null);
+    setResult(null);
 
     try {
       const res = await devFetch('/api/ai/command', {
@@ -46,52 +49,42 @@ export function CommandBar({ onTaskCreated }: CommandBarProps) {
     }
   };
 
-  const handleConfirm = async () => {
+  const handleExecute = async () => {
     if (!intent || intent.intent === 'unknown') return;
+    setExecuting(true);
 
     try {
-      if (intent.intent === 'create_task') {
-        const res = await devFetch('/api/tasks', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: intent.params.name,
-            slot_start: intent.params.slot_start_iso,
-            slot_end: intent.params.slot_end_iso,
-            volunteers_needed: intent.params.volunteers_needed,
-            skills_required: intent.params.skills_required,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          toast.error(data.error || 'Failed to create task');
-          return;
-        }
-        toast.success(
-          `Task "${intent.params.name}" created - ${data.reconcile.filled} assigned`
-        );
+      const res = await devFetch('/api/ai/command/execute', {
+        method: 'POST',
+        body: JSON.stringify({
+          intent: intent.intent,
+          params: intent.params,
+        }),
+      });
+      const data = await res.json();
+
+      setResult({ summary: data.summary, ok: data.ok !== false });
+
+      if (data.ok !== false) {
+        toast.success(data.summary);
         onTaskCreated?.();
-      } else if (intent.intent === 'query_volunteers') {
-        toast.info('Volunteer query - check the volunteers tab for results');
-      } else if (intent.intent === 'drop_assignment') {
-        toast.info(
-          `To drop ${intent.params.volunteer_name_or_email}: find them in the task list and click Drop`
-        );
-      } else if (intent.intent === 'edit_task') {
-        toast.info(
-          `To edit "${intent.params.task_hint}": find it in the task list and use the edit flow`
-        );
+      } else {
+        toast.error(data.summary);
       }
 
       setIntent(null);
       setInput('');
     } catch {
-      toast.error('Action failed');
+      toast.error('Execution failed');
+    } finally {
+      setExecuting(false);
     }
   };
 
   const handleCancel = () => {
     setIntent(null);
     setError(null);
+    setResult(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -110,108 +103,99 @@ export function CommandBar({ onTaskCreated }: CommandBarProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder='Try: "need 3 people for stage setup tomorrow 2-4pm, must know electrical"'
+            placeholder='e.g. "need 3 people for stage setup tomorrow 2-4pm" or "drop rahul, he is sick"'
             className="pl-9"
-            disabled={loading}
+            disabled={loading || executing}
           />
         </div>
-        <Button onClick={handleParse} disabled={loading || !input.trim()}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Parse'}
+        <Button onClick={handleParse} disabled={loading || executing || !input.trim()}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
 
-      {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
+      {error && (
+        <p className="text-sm text-red-500 mt-2">{error}</p>
+      )}
+
+      {result && (
+        <Card className={`mt-3 ${result.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+          <CardContent className="py-3 flex items-center justify-between">
+            <p className="text-sm">{result.summary}</p>
+            <Button size="sm" variant="ghost" onClick={() => setResult(null)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {intent && (
-        <Card className="mt-3">
+        <Card className="mt-3 border-blue-200 bg-blue-50/50">
           <CardContent className="py-3">
             {intent.intent === 'unknown' ? (
-              <div>
-                <Badge variant="secondary">Clarification needed</Badge>
-                <p className="text-sm mt-2">{intent.clarification_needed}</p>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="mt-2"
-                  onClick={handleCancel}
-                >
-                  Dismiss
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">Needs clarification</Badge>
+                  <p className="text-sm">{intent.clarification_needed}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={handleCancel}>
+                  <X className="h-3 w-3" />
                 </Button>
               </div>
             ) : (
               <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge>{intent.intent.replace('_', ' ')}</Badge>
-                  {intent.intent === 'create_task' && (
-                    <span className="text-sm text-muted-foreground">
-                      Ready to create
-                    </span>
-                  )}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className="capitalize">{intent.intent.replace(/_/g, ' ')}</Badge>
+                    <span className="text-sm text-muted-foreground">Preview — confirm to execute</span>
+                  </div>
                 </div>
 
-                <div className="text-sm space-y-1">
+                <div className="text-sm space-y-0.5 mb-3">
                   {intent.intent === 'create_task' && (
                     <>
-                      <p>
-                        <strong>Name:</strong> {intent.params.name}
-                      </p>
-                      <p>
-                        <strong>Time:</strong>{' '}
-                        {new Date(intent.params.slot_start_iso).toLocaleString()} -{' '}
-                        {new Date(intent.params.slot_end_iso).toLocaleTimeString()}
-                      </p>
-                      <p>
-                        <strong>Volunteers:</strong> {intent.params.volunteers_needed}
-                      </p>
-                      <p>
-                        <strong>Skills:</strong>{' '}
-                        {intent.params.skills_required.join(', ') || 'any'}
-                      </p>
+                      <p><span className="text-muted-foreground">Name:</span> {intent.params.name}</p>
+                      <p><span className="text-muted-foreground">Time:</span> {new Date(intent.params.slot_start_iso).toLocaleString()} – {new Date(intent.params.slot_end_iso).toLocaleTimeString()}</p>
+                      <p><span className="text-muted-foreground">Volunteers:</span> {intent.params.volunteers_needed}</p>
+                      {intent.params.skills_required.length > 0 && (
+                        <p><span className="text-muted-foreground">Skills:</span> {intent.params.skills_required.join(', ')}</p>
+                      )}
                     </>
                   )}
                   {intent.intent === 'drop_assignment' && (
                     <>
-                      <p>
-                        <strong>Volunteer:</strong>{' '}
-                        {intent.params.volunteer_name_or_email}
-                      </p>
-                      <p>
-                        <strong>Task:</strong> {intent.params.task_hint || 'not specified'}
-                      </p>
-                      <p>
-                        <strong>Reason:</strong> {intent.params.reason || 'none given'}
-                      </p>
+                      <p><span className="text-muted-foreground">Volunteer:</span> {intent.params.volunteer_name_or_email}</p>
+                      <p><span className="text-muted-foreground">Scope:</span> {intent.params.drop_all_tasks ? 'All tasks' : `Task: ${intent.params.task_hint}`}</p>
+                      {intent.params.reason && (
+                        <p><span className="text-muted-foreground">Reason:</span> {intent.params.reason}</p>
+                      )}
                     </>
                   )}
                   {intent.intent === 'query_volunteers' && (
                     <>
-                      <p>
-                        <strong>Skills:</strong>{' '}
-                        {intent.params.required_skills.join(', ') || 'any'}
-                      </p>
-                      <p>
-                        <strong>Status:</strong> {intent.params.status_filter}
-                      </p>
+                      {intent.params.required_skills.length > 0 && (
+                        <p><span className="text-muted-foreground">Skills:</span> {intent.params.required_skills.join(', ')}</p>
+                      )}
+                      <p><span className="text-muted-foreground">Status:</span> {intent.params.status_filter}</p>
                     </>
                   )}
                   {intent.intent === 'edit_task' && (
                     <>
-                      <p>
-                        <strong>Task:</strong> {intent.params.task_hint}
-                      </p>
+                      <p><span className="text-muted-foreground">Task:</span> {intent.params.task_hint}</p>
                       {intent.params.new_volunteers_needed && (
-                        <p>
-                          <strong>New count:</strong> {intent.params.new_volunteers_needed}
-                        </p>
+                        <p><span className="text-muted-foreground">New count:</span> {intent.params.new_volunteers_needed}</p>
                       )}
                     </>
                   )}
                 </div>
 
-                <div className="flex gap-2 mt-3">
-                  <Button size="sm" onClick={handleConfirm}>
-                    <Check className="h-3 w-3 mr-1" />
-                    Confirm
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleExecute} disabled={executing}>
+                    {executing ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <Check className="h-3 w-3 mr-1" />
+                    )}
+                    {executing ? 'Executing...' : 'Confirm'}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={handleCancel}>
                     <X className="h-3 w-3 mr-1" />
