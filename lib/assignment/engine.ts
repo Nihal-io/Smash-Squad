@@ -109,7 +109,13 @@ export async function reconcileTask(
   const alreadyWaitlistedIds = new Set(
     existing.filter((a) => a.status === 'waitlist').map((a) => a.volunteer_id)
   );
-  const touchedIds = new Set(existing.map((a) => a.volunteer_id));
+  // Exclude volunteers already assigned or previously dropped from this task.
+// Waitlisted volunteers ARE eligible — they're candidates for promotion.
+const excludedIds = new Set(
+  existing
+    .filter((a) => a.status === 'assigned' || a.status === 'dropped')
+    .map((a) => a.volunteer_id)
+);
 
   const alreadyAssignedCount = alreadyAssignedIds.size;
   const gap = task.volunteers_needed - alreadyAssignedCount;
@@ -167,7 +173,7 @@ export async function reconcileTask(
   const assignmentsByVolunteer = new Map<
     string,
     Array<{ task_id: string; slot_start: string; slot_end: string }>
-  >();
+>();
   for (const a of allActiveAssignments ?? []) {
     const slotInfo = a.tasks as { slot_start: string; slot_end: string } | null;
     if (!slotInfo) continue;
@@ -187,9 +193,9 @@ export async function reconcileTask(
   }> = [];
 
   for (const v of approvedVolunteers) {
-    if (touchedIds.has(v.id)) continue; // already assigned/dropped/waitlisted here
+    if (excludedIds.has(v.id)) continue; // already assigned/dropped/waitlisted here
 
-    const availability = (v.availability as AvailabilityWindow[]) ?? [];
+    const availability = (v.availability as unknown as AvailabilityWindow[]) ?? [];
     if (!slotFitsAvailability(task.slot_start, task.slot_end, availability)) {
       continue;
     }
