@@ -43,7 +43,7 @@
 
 ## Phase 5 — API routes (hours 11–16)
 - [x] **C11** `feat(api): volunteer registration and approval routes`
-- [ ] **C12** `feat(api): task CRUD and assignment routes`
+- [x] **C12** `feat(api): task CRUD and assignment routes`
 - [ ] **C12.5** `feat(ai): provider-agnostic LLM client implementation`
   - Implement provider matching env key
   - Hello-world test
