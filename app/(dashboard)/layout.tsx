@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { can } from '@/lib/rbac/permissions';
 import type { Role } from '@/lib/rbac/permissions';
 import { RoleSwitcher } from '@/components/dev/role-switcher';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { createClient } from '@/lib/supabase/client';
 import {
   ClipboardList,
   Users,
   LayoutDashboard,
   BarChart3,
   Ticket,
+  LogOut,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -60,7 +63,30 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [role, setRole] = useState<Role>('coordinator');
+  const [userName, setUserName] = useState<string>('');
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, full_name')
+          .eq('id', user.id)
+          .single();
+        if (profile) {
+          setRole(profile.role as Role);
+          setUserName(profile.full_name ?? '');
+        }
+      }
+    };
+    void loadUser();
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem('festflow_dev_role') as Role | null;
@@ -74,6 +100,12 @@ export default function DashboardLayout({
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   const visibleNav = NAV_ITEMS.filter((item) => can(role, item.permission));
 
@@ -112,6 +144,15 @@ export default function DashboardLayout({
           <h2 className="text-lg font-semibold">
             {visibleNav.find((n) => n.href === pathname)?.label ?? 'FestFlow'}
           </h2>
+          <div className="flex items-center gap-3">
+            {userName && (
+              <span className="text-sm text-muted-foreground">{userName}</span>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => void handleLogout()}>
+              <LogOut className="h-4 w-4 mr-1" />
+              Logout
+            </Button>
+          </div>
         </header>
         <div className="flex-1 overflow-auto p-6">{children}</div>
       </main>

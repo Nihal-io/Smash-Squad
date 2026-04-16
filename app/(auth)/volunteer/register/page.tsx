@@ -15,6 +15,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
 
 const schema = z.object({
   full_name: z.string().min(1, 'Name required'),
@@ -33,9 +34,15 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+// Demo limitation: /api/volunteers/register creates a profile row with a random id;
+// signUp creates a separate auth user id. Profile id and auth user id will not match,
+// so getRoleServer(profile by session id) will not find self-registered users. Use
+// seeded accounts to demo volunteer login; coordinators still see pending volunteers.
+
 export default function VolunteerRegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
 
   const {
     register,
@@ -90,7 +97,21 @@ export default function VolunteerRegisterPage() {
         return;
       }
 
-      toast.success('Registration submitted! Awaiting approval.');
+      const generatedPassword = data.full_name.toLowerCase().replace(/\s+/g, '') + '123';
+      setCredentials({ email: data.email, password: generatedPassword });
+
+      const supabase = createClient();
+      const { error: signUpErr } = await supabase.auth.signUp({
+        email: data.email,
+        password: generatedPassword,
+      });
+
+      if (signUpErr) {
+        toast.error(signUpErr.message);
+        return;
+      }
+
+      toast.success('Registration submitted! Awaiting approval. You can now log in.');
       setSubmitted(true);
     } catch {
       toast.error('Something went wrong');
@@ -106,10 +127,27 @@ export default function VolunteerRegisterPage() {
           <CardHeader>
             <CardTitle>Registration Received</CardTitle>
             <CardDescription>
-              Your application is pending coordinator approval. You will be
-              notified once a decision is made.
+              Your application is pending coordinator approval.
             </CardDescription>
           </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-md bg-muted p-3 text-sm">
+              <p className="font-medium mb-1">Your login credentials:</p>
+              <p>
+                Email: <code>{credentials.email}</code>
+              </p>
+              <p>
+                Password: <code>{credentials.password}</code>
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Note: for the full volunteer dashboard experience, use a seeded account (e.g. priya@festflow.dev) after running{' '}
+              <code className="text-xs">npm run seed</code>.
+            </p>
+            <Button asChild className="w-full">
+              <a href="/login">Go to Login</a>
+            </Button>
+          </CardContent>
         </Card>
       </div>
     );
@@ -120,9 +158,7 @@ export default function VolunteerRegisterPage() {
       <Card className="w-full max-w-lg">
         <CardHeader>
           <CardTitle>Volunteer Registration</CardTitle>
-          <CardDescription>
-            Sign up to volunteer at our upcoming fest
-          </CardDescription>
+          <CardDescription>Sign up to volunteer at our upcoming fest</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

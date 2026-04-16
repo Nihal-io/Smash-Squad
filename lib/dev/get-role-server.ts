@@ -1,25 +1,46 @@
 import type { Role } from '@/lib/rbac/permissions';
+import { createClient } from '@/lib/supabase/server';
 
 const VALID_ROLES: readonly Role[] = ['admin', 'coordinator', 'volunteer', 'participant'];
-const COOKIE_NAME = 'festflow_dev_role';
 
 export async function getRoleServer(request: Request): Promise<Role | null> {
-  if (process.env.NODE_ENV === 'production') {
-    return null; // TODO(C20): read from session
+  // Try real Supabase session first
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.role && VALID_ROLES.includes(profile.role as Role)) {
+        return profile.role as Role;
+      }
+    }
+  } catch {
+    // Session read failed — fall through to dev mode
   }
 
-  // Priority 1: x-dev-role header (set by RoleHeaderInjector on client fetches)
-  const headerRole = request.headers.get('x-dev-role');
-  if (headerRole && VALID_ROLES.includes(headerRole as Role)) {
-    return headerRole as Role;
+  // Dev mode fallback: x-dev-role header or cookie
+  if (process.env.NODE_ENV !== 'production') {
+    const headerRole = request.headers.get('x-dev-role');
+    if (headerRole && VALID_ROLES.includes(headerRole as Role)) {
+      return headerRole as Role;
+    }
+
+    const cookieHeader = request.headers.get('cookie') || '';
+    const match = cookieHeader.match(/festflow_dev_role=([^;]+)/);
+    if (match && VALID_ROLES.includes(match[1] as Role)) {
+      return match[1] as Role;
+    }
+
+    return 'coordinator';
   }
 
-  // Priority 2: cookie (for server component page navigations)
-  const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(new RegExp(`${COOKIE_NAME}=([^;]+)`));
-  if (match && VALID_ROLES.includes(match[1] as Role)) {
-    return match[1] as Role;
-  }
-
-  return 'coordinator';
+  return null;
 }

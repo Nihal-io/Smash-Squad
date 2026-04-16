@@ -14,9 +14,6 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireRole(request, 'tasks.edit');
-  if (guard) return guard;
-
   const { id } = await params;
 
   let body: unknown = {};
@@ -35,6 +32,10 @@ export async function POST(
   }
 
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: assignment, error: aErr } = await supabase
     .from('assignments')
@@ -57,6 +58,23 @@ export async function POST(
       { error: `cannot drop an assignment with status '${assignment.status}'` },
       { status: 400 }
     );
+  }
+
+  let isSelfDrop = false;
+  if (user) {
+    const { data: vol } = await supabase
+      .from('volunteers')
+      .select('id')
+      .eq('profile_id', user.id)
+      .maybeSingle();
+    if (vol && vol.id === assignment.volunteer_id) {
+      isSelfDrop = true;
+    }
+  }
+
+  if (!isSelfDrop) {
+    const guard = await requireRole(request, 'tasks.edit');
+    if (guard) return guard;
   }
 
   const { error: upErr } = await supabase
