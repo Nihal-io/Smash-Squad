@@ -47,6 +47,12 @@ const FILL_COLORS = {
   empty: 'bg-red-100 text-red-800',
 };
 
+const TASK_BORDER: Record<Task['fill_status'], string> = {
+  full: 'border-l-emerald-500',
+  partial: 'border-l-amber-500',
+  empty: 'border-l-red-500',
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,8 +206,13 @@ export default function TasksPage() {
   return (
     <div>
       <CommandBar onTaskCreated={fetchTasks} />
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Tasks</h1>
+      <div className="flex justify-between items-start gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Tasks</h1>
+          <p className="text-muted-foreground mt-2 max-w-xl leading-relaxed">
+            Manage your event tasks, slots, and volunteer coverage in one place.
+          </p>
+        </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -285,7 +296,10 @@ export default function TasksPage() {
           ) : (
             <div className="space-y-3 mt-4">
               {tasks.map((t) => (
-                <Card key={t.id}>
+                <Card
+                  key={t.id}
+                  className={`border-l-4 ${TASK_BORDER[t.fill_status]} shadow-sm transition-shadow duration-200 hover:shadow-md`}
+                >
                   <CardContent className="py-4">
                     <div
                       className="flex items-center justify-between cursor-pointer"

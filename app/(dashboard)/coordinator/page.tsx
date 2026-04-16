@@ -9,75 +9,97 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ClipboardList, Users, UserCheck, CalendarClock, Activity } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ClipboardList, Users, Clock, Zap, Calendar } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 type Stats = {
   totalTasks: number;
   totalVolunteers: number;
   pendingApprovals: number;
-  assignmentsToday: number;
+  activeAssignments: number;
 };
 
-type RecentRow = {
+type UpcomingTask = {
   id: string;
-  assigned_at: string | null;
-  status: string | null;
-  tasks: { name: string } | { name: string }[] | null;
-  volunteers: {
-    profiles: { full_name: string | null } | { full_name: string | null }[] | null;
-  } | null;
+  name: string;
+  slot_start: string;
+  slot_end: string;
+  volunteers_needed: number;
+  assigned: number;
+  fill_status: 'full' | 'partial' | 'empty';
+};
+
+const FILL_BADGE: Record<UpcomingTask['fill_status'], string> = {
+  full: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100',
+  partial: 'bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100',
+  empty: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100',
 };
 
 export default function CoordinatorDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [recent, setRecent] = useState<RecentRow[]>([]);
+  const [upcoming, setUpcoming] = useState<UpcomingTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
 
-    const [
-      tasksRes,
-      volRes,
-      pendingRes,
-      todayRes,
-      recentRes,
-    ] = await Promise.all([
+    const [tasksRes, volRes, pendingRes, assignedRes, upcomingRes] = await Promise.all([
       supabase.from('tasks').select('*', { count: 'exact', head: true }),
       supabase.from('volunteers').select('*', { count: 'exact', head: true }),
+      supabase.from('volunteers').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('assignments').select('*', { count: 'exact', head: true }).eq('status', 'assigned'),
       supabase
-        .from('volunteers')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending'),
-      supabase
-        .from('assignments')
-        .select('*', { count: 'exact', head: true })
-        .gte('assigned_at', start.toISOString())
-        .lte('assigned_at', end.toISOString())
-        .in('status', ['assigned', 'waitlist']),
-      supabase
-        .from('assignments')
-        .select(
-          'id, assigned_at, status, tasks:task_id(name), volunteers:volunteer_id(profiles:profile_id(full_name))'
-        )
-        .not('assigned_at', 'is', null)
-        .order('assigned_at', { ascending: false })
-        .limit(5),
+        .from('tasks')
+        .select('id, name, slot_start, slot_end, volunteers_needed')
+        .order('slot_start', { ascending: true })
+        .limit(40),
     ]);
+
+    const ordered = upcomingRes.data ?? [];
+    const nowMs = Date.now();
+    const picked: typeof ordered = [];
+    for (const t of ordered) {
+      if (picked.length >= 3) break;
+      if (new Date(t.slot_start).getTime() >= nowMs) picked.push(t);
+    }
+    for (const t of ordered) {
+      if (picked.length >= 3) break;
+      if (!picked.some((p) => p.id === t.id)) picked.push(t);
+    }
+    const rows = picked.slice(0, 3);
+
+    const upcomingBuilt: UpcomingTask[] = [];
+    for (const t of rows) {
+      const { count } = await supabase
+        .from('assignments')
+        .select('id', { count: 'exact', head: true })
+        .eq('task_id', t.id)
+        .eq('status', 'assigned');
+      const assigned = count ?? 0;
+      const need = t.volunteers_needed;
+      let fill_status: UpcomingTask['fill_status'] = 'empty';
+      if (assigned >= need) fill_status = 'full';
+      else if (assigned > 0) fill_status = 'partial';
+      upcomingBuilt.push({
+        id: t.id,
+        name: t.name,
+        slot_start: t.slot_start,
+        slot_end: t.slot_end,
+        volunteers_needed: need,
+        assigned,
+        fill_status,
+      });
+    }
 
     setStats({
       totalTasks: tasksRes.count ?? 0,
       totalVolunteers: volRes.count ?? 0,
       pendingApprovals: pendingRes.count ?? 0,
-      assignmentsToday: todayRes.count ?? 0,
+      activeAssignments: assignedRes.count ?? 0,
     });
-
-    setRecent((recentRes.data as RecentRow[] | null) ?? []);
+    setUpcoming(upcomingBuilt);
     setLoading(false);
   }, []);
 
@@ -85,56 +107,70 @@ export default function CoordinatorDashboard() {
     void load();
   }, [load]);
 
-  const statCards = stats
+  const statDefs = stats
     ? [
         {
           title: 'Total tasks',
           value: stats.totalTasks,
           icon: ClipboardList,
-          description: 'Across all events',
+          description: 'Scheduled shifts',
+          warn: false,
         },
         {
-          title: 'Volunteers',
+          title: 'Total volunteers',
           value: stats.totalVolunteers,
           icon: Users,
-          description: 'Registered profiles',
+          description: 'Registered in FestFlow',
+          warn: false,
         },
         {
           title: 'Pending approvals',
           value: stats.pendingApprovals,
-          icon: UserCheck,
-          description: 'Awaiting review',
+          icon: Clock,
+          description: 'Applications awaiting review',
+          warn: stats.pendingApprovals > 0,
         },
         {
-          title: 'Assignments today',
-          value: stats.assignmentsToday,
-          icon: CalendarClock,
-          description: 'New or updated today',
+          title: 'Active assignments',
+          value: stats.activeAssignments,
+          icon: Zap,
+          description: 'Volunteers currently assigned',
+          warn: false,
         },
       ]
     : [];
 
   if (loading) {
-    return (
-      <p className="text-muted-foreground text-sm">Loading dashboard…</p>
-    );
+    return <p className="text-muted-foreground text-sm">Loading dashboard…</p>;
   }
 
   return (
     <div className="max-w-5xl mx-auto space-y-10">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Coordinator overview</h1>
-        <p className="text-muted-foreground text-sm mt-1.5">
-          Snapshot of tasks, volunteers, and latest assignments.
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Coordinator overview</h1>
+        <p className="text-muted-foreground text-base mt-2 max-w-2xl leading-relaxed">
+          Manage staffing, track approvals, and keep TechFest running smoothly.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {statCards.map(({ title, value, icon: Icon, description }) => (
-          <Card key={title} className="border-muted/80 shadow-sm">
+        {statDefs.map(({ title, value, icon: Icon, description, warn }) => (
+          <Card
+            key={title}
+            className={cn(
+              'border-border/80 shadow-sm hover:shadow-md transition-shadow duration-200',
+              warn && 'ring-1 ring-amber-300/80 border-amber-200/60'
+            )}
+          >
             <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-              <Icon className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
+              <Icon
+                className={cn(
+                  'h-4 w-4 shrink-0',
+                  warn && value > 0 ? 'text-amber-600' : 'text-muted-foreground'
+                )}
+                aria-hidden
+              />
             </CardHeader>
             <CardContent className="pt-0">
               <p className="text-3xl font-semibold tabular-nums tracking-tight">{value}</p>
@@ -144,45 +180,44 @@ export default function CoordinatorDashboard() {
         ))}
       </div>
 
-      <Card className="border-muted/80 shadow-sm">
+      <Card className="border-border/80 shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-muted-foreground" />
+            <Calendar className="h-5 w-5 text-primary" />
             <div>
-              <CardTitle className="text-base font-semibold">Recent activity</CardTitle>
+              <CardTitle className="text-lg font-semibold">Upcoming tasks</CardTitle>
               <CardDescription className="mt-1">
-                Latest assignment updates (who was placed on which task).
+                Next shifts on the calendar — with live fill status.
               </CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-0 divide-y rounded-md border bg-muted/20">
-          {recent.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No assignment activity yet.</p>
+        <CardContent className="space-y-3">
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">No tasks scheduled yet. Create one from Tasks.</p>
           ) : (
-            recent.map((row) => {
-              const task = Array.isArray(row.tasks) ? row.tasks[0] : row.tasks;
-              const vol = row.volunteers;
-              const profNested = vol && (Array.isArray(vol.profiles) ? vol.profiles[0] : vol.profiles);
-              const name = profNested?.full_name ?? 'Volunteer';
-              const taskName = task?.name ?? 'Task';
-              const when = row.assigned_at
-                ? format(parseISO(row.assigned_at), "MMM d, yyyy · h:mm a")
-                : '—';
-              return (
-                <div
-                  key={row.id}
-                  className="flex flex-col gap-0.5 py-3.5 px-1 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <p className="text-sm">
-                    <span className="font-medium">{name}</span>
-                    <span className="text-muted-foreground"> assigned to </span>
-                    <span className="font-medium">{taskName}</span>
+            upcoming.map((t) => (
+              <div
+                key={t.id}
+                className="flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="font-medium">{t.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {format(parseISO(t.slot_start), 'EEE, MMM d · h:mm a')} –{' '}
+                    {format(parseISO(t.slot_end), 'h:mm a')}
                   </p>
-                  <p className="text-xs text-muted-foreground tabular-nums sm:text-right">{when}</p>
                 </div>
-              );
-            })
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {t.assigned}/{t.volunteers_needed} filled
+                  </span>
+                  <Badge className={cn('font-medium capitalize', FILL_BADGE[t.fill_status])}>
+                    {t.fill_status}
+                  </Badge>
+                </div>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>

@@ -22,6 +22,12 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-800',
 };
 
+const STATUS_BORDER: Record<string, string> = {
+  pending: 'border-l-amber-400',
+  approved: 'border-l-emerald-500',
+  rejected: 'border-l-red-500',
+};
+
 export default function VolunteersPage() {
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +80,12 @@ export default function VolunteersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Volunteers</h1>
+      <div className="mb-6">
+        <h1 className="text-3xl font-semibold tracking-tight">Volunteers</h1>
+        <p className="text-muted-foreground mt-2 max-w-xl leading-relaxed">
+          Review and approve volunteer applications before they are assigned to tasks.
+        </p>
+      </div>
       {volunteers.length === 0 ? (
         <p className="text-muted-foreground">No volunteers registered yet.</p>
       ) : (
@@ -84,7 +95,10 @@ export default function VolunteersPage() {
               ? (v.profiles as unknown as { full_name: string; email: string }[])[0]
               : v.profiles;
             return (
-              <Card key={v.id}>
+              <Card
+                key={v.id}
+                className={`border-l-4 ${STATUS_BORDER[v.status] ?? 'border-l-slate-300'} shadow-sm transition-shadow duration-200 hover:shadow-md`}
+              >
                 <CardContent className="flex items-center justify-between py-4">
                   <div className="space-y-1">
                     <p className="font-medium">{profile?.full_name ?? 'Unknown'}</p>

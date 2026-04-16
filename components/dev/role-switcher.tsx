@@ -23,12 +23,12 @@ export function RoleSwitcher() {
   if (process.env.NEXT_PUBLIC_DEV_MODE !== 'true') return null;
 
   return (
-    <div className="p-3 border-t">
-      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-        Switch Role
+    <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+      <label className="text-xs font-medium text-slate-500 mb-1.5 block">
+        Switch Role (dev)
       </label>
       <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-        <SelectTrigger className="h-8 text-sm">
+        <SelectTrigger className="h-8 text-sm border-slate-700 bg-slate-900 text-slate-200">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

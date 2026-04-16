@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Sparkles } from 'lucide-react';
+import { Zap } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -60,73 +60,79 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4 overflow-hidden">
+    <div className="relative flex min-h-screen flex-col">
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,hsl(var(--primary)/0.18),transparent)]"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-600/85 via-violet-600/75 to-purple-900/90"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom_right,hsl(var(--muted)/0.5),transparent_45%,hsl(var(--primary)/0.06))]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(255,255,255,0.18),transparent_55%)]"
         aria-hidden
       />
       <div
-        className="absolute inset-0 opacity-[0.35] dark:opacity-[0.2] bg-[size:24px_24px] bg-[linear-gradient(to_right,hsl(var(--border)/0.35)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.35)_1px,transparent_1px)]"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_top,rgba(15,23,42,0.5),transparent)]"
         aria-hidden
       />
 
-      <Card className="relative w-full max-w-md border-muted/80 shadow-lg shadow-black/5">
-        <CardHeader className="text-center space-y-3 pb-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Sparkles className="h-7 w-7" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-semibold tracking-tight">FestFlow</CardTitle>
-            <CardDescription className="mt-2 text-base">
-              AI-powered volunteer coordination
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-2">
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="coord@festflow.dev"
-                className="h-11"
-                required
-              />
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-6">
+        <Card className="w-full max-w-md border-0 shadow-xl shadow-indigo-950/25 bg-white/95 backdrop-blur-sm dark:bg-slate-950/95">
+          <CardHeader className="text-center space-y-4 pb-2 pt-8 px-8">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30">
+              <Zap className="h-8 w-8" strokeWidth={2.25} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="festflow123"
-                className="h-11"
-                required
-              />
+            <div>
+              <CardTitle className="text-3xl font-semibold tracking-tight">FestFlow</CardTitle>
+              <CardDescription className="mt-3 text-base text-muted-foreground">
+                Coordinate volunteers, tasks, and shifts in one calm workspace — built for high-trust events.
+              </CardDescription>
             </div>
-            <Button type="submit" className="w-full h-11 text-base font-medium" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
+          </CardHeader>
+          <CardContent className="px-8 pt-2 pb-8">
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="coord@festflow.dev"
+                  className="h-11 bg-background"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="h-11 bg-background"
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full h-11 text-base font-medium shadow-md" disabled={loading}>
+                {loading ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
 
-          <div className="mt-8 text-center">
-            <a
-              href="/volunteer/register"
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
-            >
-              Register as a volunteer
-            </a>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="mt-8 text-center">
+              <a
+                href="/volunteer/register"
+                className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
+              >
+                Register as a volunteer
+              </a>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <footer className="relative z-10 pb-6 text-center">
+        <p className="text-sm text-white/70">Built for TechFest 2026 — volunteer coordination by FestFlow</p>
+      </footer>
     </div>
   );
 }

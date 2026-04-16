@@ -9,6 +9,7 @@ import { RoleSwitcher } from '@/components/dev/role-switcher';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
+import { NotificationBell } from '@/components/dashboard/notification-bell';
 import {
   ClipboardList,
   Users,
@@ -16,7 +17,7 @@ import {
   BarChart3,
   Ticket,
   LogOut,
-  Sparkles,
+  Zap,
 } from 'lucide-react';
 
 type NavItem = {
@@ -108,6 +109,7 @@ export default function DashboardLayout({
   const [role, setRole] = useState<Role | null>(null);
   const [roleReady, setRoleReady] = useState(false);
   const [userName, setUserName] = useState<string>('');
+  const [userId, setUserId] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -118,6 +120,7 @@ export default function DashboardLayout({
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
+        setUserId(user.id);
         const { data: profile } = await supabase
           .from('profiles')
           .select('role, full_name')
@@ -165,21 +168,20 @@ export default function DashboardLayout({
   const showDevRoleSwitcher = process.env.NEXT_PUBLIC_DEV_MODE === 'true';
 
   return (
-    <div className="flex h-screen bg-background">
-      <aside className="w-64 border-r bg-muted/30 flex flex-col shrink-0">
-        <div className="p-4 border-b space-y-2">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Sparkles className="h-5 w-5" />
+    <div className="flex h-screen bg-slate-50/80">
+      <aside className="w-64 flex flex-col shrink-0 border-r border-slate-800/80 bg-slate-950 text-slate-100">
+        <div className="p-5 border-b border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-400/30">
+              <Zap className="h-5 w-5" aria-hidden />
             </div>
-            <h1 className="text-lg font-semibold tracking-tight">FestFlow</h1>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-white">FestFlow</h1>
+              <p className="text-[11px] text-slate-500 uppercase tracking-wider">Operations</p>
+            </div>
           </div>
-          {role && (
-            <Badge variant="outline" className="capitalize text-xs font-normal">
-              {role}
-            </Badge>
-          )}
         </div>
+
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {roleReady && role
             ? visibleNav.map((item) => {
@@ -189,10 +191,10 @@ export default function DashboardLayout({
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150 ${
                       active
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
+                        : 'text-slate-300 hover:bg-slate-800/90 hover:text-white'
                     }`}
                   >
                     <Icon className="h-4 w-4 shrink-0 opacity-90" />
@@ -202,20 +204,39 @@ export default function DashboardLayout({
               })
             : null}
         </nav>
-        {showDevRoleSwitcher ? <RoleSwitcher /> : null}
+
+        <div className="p-4 border-t border-slate-800/80 space-y-3">
+          {role && userName ? (
+            <div className="rounded-lg bg-slate-900/80 px-3 py-2.5 ring-1 ring-slate-800">
+              <p className="text-sm font-medium text-white truncate" title={userName}>
+                {userName}
+              </p>
+              <Badge
+                variant="secondary"
+                className="mt-1.5 capitalize text-[10px] font-normal bg-slate-800 text-slate-300 border-slate-700"
+              >
+                {role}
+              </Badge>
+            </div>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-slate-300 hover:text-white hover:bg-slate-800"
+            onClick={() => void handleLogout()}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Log out
+          </Button>
+          {showDevRoleSwitcher ? <RoleSwitcher /> : null}
+        </div>
       </aside>
 
-      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="h-14 border-b flex items-center justify-between px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <h2 className="text-lg font-semibold tracking-tight">{headerLabel}</h2>
-          <div className="flex items-center gap-3">
-            {userName ? (
-              <span className="text-sm text-muted-foreground">{userName}</span>
-            ) : null}
-            <Button variant="ghost" size="sm" onClick={() => void handleLogout()}>
-              <LogOut className="h-4 w-4 mr-1.5" />
-              Logout
-            </Button>
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0 bg-background">
+        <header className="h-14 shrink-0 flex items-center justify-between px-6 border-b border-border/80 bg-card shadow-sm">
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">{headerLabel}</h2>
+          <div className="flex items-center gap-1">
+            <NotificationBell userId={userId} />
           </div>
         </header>
         <div className="flex-1 overflow-auto p-6 md:p-8">{children}</div>

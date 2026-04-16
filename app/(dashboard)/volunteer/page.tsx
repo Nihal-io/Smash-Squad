@@ -156,6 +156,12 @@ export default function VolunteerDashboard() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">Volunteer dashboard</h1>
+        <p className="text-muted-foreground mt-2 leading-relaxed">
+          Your shifts, briefings, and updates in one place.
+        </p>
+      </div>
       {/* Personalized Briefing */}
       <Card className="border-blue-200/80 bg-gradient-to-br from-blue-50/90 to-background shadow-sm dark:from-blue-950/30 dark:to-background">
         <CardHeader className="space-y-1">

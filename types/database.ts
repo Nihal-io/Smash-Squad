@@ -104,6 +104,44 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          id: string
+          recipient_id: string
+          kind: string
+          subject: string
+          body: string
+          read: boolean
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          recipient_id: string
+          kind: string
+          subject: string
+          body: string
+          read?: boolean
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          recipient_id?: string
+          kind?: string
+          subject?: string
+          body?: string
+          read?: boolean
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null

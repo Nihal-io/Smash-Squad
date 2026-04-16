@@ -72,8 +72,8 @@
 - [ ] **C18.6** `feat(ai): LLM conflict resolver + UI`
 
 ## Phase 10 — Real auth (hours 32–35)
-- [ ] Restore profiles.id FK to auth.users before C20 seed reset
-- [ ] **C20** `feat(auth): supabase auth integration`
+- [x] Restore profiles.id FK to auth.users before C20 seed reset
+- [x] **C20** `feat(auth): supabase auth integration`
 
 ## Phase 11 — Ship it (hours 35–36)
 - [ ] **C21** `docs: readme and demo script`
