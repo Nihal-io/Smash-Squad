@@ -12,10 +12,10 @@
 - [x] **C2** `chore: set up folder structure and permissions matrix`
 
 ## Phase 1 — Database & types (hours 2–4)
-- [ ] **C3** `feat(db): initial schema migration`
+- [X] **C3** `feat(db): initial schema migration`
   - Run 001_init.sql in Supabase dashboard
   - Verify tables in Supabase dashboard
-- [ ] **C4** `feat(db): RLS policies (permissive dev mode)`
+- [X] **C4** `feat(db): RLS policies (permissive dev mode)`
   - Run 002_rls.sql in Supabase dashboard
 - [ ] **C5** `feat: typed database + supabase clients`
   - Generate types via `supabase gen types`
