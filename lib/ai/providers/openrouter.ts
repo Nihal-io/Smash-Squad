@@ -2,15 +2,23 @@ import type { LLMClient } from '../client';
 import { z } from 'zod';
 
 const BASE_URL = 'https://openrouter.ai/api/v1';
+const llmResponseCache = new Map<string, string>();
+
+function buildCacheKey(system: string, user: string) {
+  return `${system.slice(0, 100)}::${user}`;
+}
 
 export class OpenRouterClient implements LLMClient {
   provider = 'openrouter' as const;
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-    this.model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp:free';
+  constructor(apiKey?: string, model?: string) {
+    this.apiKey = apiKey ?? process.env.OPENROUTER_API_KEY ?? '';
+    if (!this.apiKey) {
+      throw new Error('OPENROUTER_API_KEY not set. Get one at https://openrouter.ai/keys');
+    }
+    this.model = model ?? process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-exp:free';
   }
 
   async generateStructured<T>(opts: {
@@ -20,6 +28,13 @@ export class OpenRouterClient implements LLMClient {
     schemaName: string;
     temperature?: number;
   }): Promise<T> {
+    const cacheKey = buildCacheKey(opts.system, opts.user);
+    const cached = llmResponseCache.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return opts.schema.parse(parsed);
+    }
+
     const response = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -53,6 +68,7 @@ export class OpenRouterClient implements LLMClient {
 
     try {
       const parsed = JSON.parse(cleaned);
+      llmResponseCache.set(cacheKey, cleaned);
       return opts.schema.parse(parsed);
     } catch (e) {
       throw new Error(
@@ -68,6 +84,10 @@ export class OpenRouterClient implements LLMClient {
     user: string;
     temperature?: number;
   }): Promise<string> {
+    const cacheKey = buildCacheKey(opts.system, opts.user);
+    const cached = llmResponseCache.get(cacheKey);
+    if (cached) return cached;
+
     const response = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -92,6 +112,8 @@ export class OpenRouterClient implements LLMClient {
     }
 
     const data = await response.json();
-    return data.choices?.[0]?.message?.content ?? '';
+    const text = data.choices?.[0]?.message?.content ?? '';
+    llmResponseCache.set(cacheKey, text);
+    return text;
   }
 }

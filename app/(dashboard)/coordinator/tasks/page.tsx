@@ -18,8 +18,9 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Plus, Table, CalendarDays } from 'lucide-react';
+import { Plus, Table, CalendarDays, Trash2 } from 'lucide-react';
 import { CommandBar } from '@/components/ai/command-bar';
+import { ResolutionPanel } from '@/components/ai/resolution-panel';
 import { TaskCalendar } from '@/components/tasks/task-calendar';
 
 interface Task {
@@ -60,7 +61,13 @@ export default function TasksPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    name: string;
+    slot_start: string;
+    slot_end: string;
+    volunteers_needed: number | '';
+    skills_required: string;
+  }>({
     name: '',
     slot_start: '',
     slot_end: '',
@@ -113,6 +120,13 @@ export default function TasksPage() {
       return;
     }
 
+    const volunteersNeeded =
+      form.volunteers_needed === '' ? NaN : form.volunteers_needed;
+    if (!Number.isFinite(volunteersNeeded) || volunteersNeeded < 1) {
+      toast.error('Volunteers needed must be at least 1');
+      return;
+    }
+
     setCreating(true);
     try {
       const res = await devFetch('/api/tasks', {
@@ -121,7 +135,7 @@ export default function TasksPage() {
           name: form.name,
           slot_start: new Date(form.slot_start).toISOString(),
           slot_end: new Date(form.slot_end).toISOString(),
-          volunteers_needed: form.volunteers_needed,
+          volunteers_needed: volunteersNeeded,
           skills_required: form.skills_required
             .split(',')
             .map((s) => s.trim().toLowerCase())
@@ -150,6 +164,7 @@ export default function TasksPage() {
 
   // Assignment detail state - shared between table and calendar
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
+  const [resolveTaskId, setResolveTaskId] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [promotedAssignmentIds, setPromotedAssignmentIds] = useState<Set<string>>(new Set());
@@ -192,6 +207,31 @@ export default function TasksPage() {
       setAssignments([]);
     } finally {
       setLoadingAssignments(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string, taskName: string) => {
+    if (!window.confirm(`Delete task "${taskName}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      const res = await devFetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to delete task');
+        return;
+      }
+      toast.success('Task deleted');
+      if (expandedTask === taskId) {
+        setExpandedTask(null);
+        setAssignments([]);
+      }
+      if (resolveTaskId === taskId) {
+        setResolveTaskId(null);
+      }
+      fetchTasks();
+    } catch {
+      toast.error('Something went wrong');
     }
   };
 
@@ -279,10 +319,19 @@ export default function TasksPage() {
                 <Input
                   type="number"
                   min={1}
-                  value={form.volunteers_needed}
-                  onChange={(e) =>
-                    setForm({ ...form, volunteers_needed: parseInt(e.target.value, 10) || 1 })
-                  }
+                  value={form.volunteers_needed === '' ? '' : form.volunteers_needed}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '') {
+                      setForm({ ...form, volunteers_needed: '' });
+                      return;
+                    }
+                    const n = parseInt(v, 10);
+                    if (!Number.isNaN(n)) {
+                      setForm({ ...form, volunteers_needed: n });
+                    }
+                  }}
                 />
               </div>
               <div>
@@ -342,15 +391,42 @@ export default function TasksPage() {
                           ))}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span
-                          className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            FILL_COLORS[t.fill_status]
-                          }`}
-                        >
-                          {t.counts.assigned}/{t.volunteers_needed}
-                        </span>
-                        <p className="text-xs text-muted-foreground mt-1">
+                      <div
+                        className="text-right flex flex-col items-end gap-1.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full font-medium ${
+                              FILL_COLORS[t.fill_status]
+                            }`}
+                          >
+                            {t.counts.assigned}/{t.volunteers_needed}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                            aria-label={`Delete ${t.name}`}
+                            onClick={() => void handleDeleteTask(t.id, t.name)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          {t.fill_status !== 'full' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() =>
+                                setResolveTaskId((prev) => (prev === t.id ? null : t.id))
+                              }
+                            >
+                              {resolveTaskId === t.id ? 'Close' : 'Resolve'}
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
                           {t.counts.waitlist} waitlisted
                         </p>
                       </div>
@@ -415,6 +491,21 @@ export default function TasksPage() {
                           </div>
                         )}
                       </div>
+                    )}
+
+                    {resolveTaskId === t.id && t.fill_status !== 'full' && (
+                      <ResolutionPanel
+                        taskId={t.id}
+                        onResolved={() => {
+                          fetchTasks();
+                          if (expandedTask === t.id) {
+                            window.setTimeout(() => {
+                              void loadAssignments(t.id, 'refresh');
+                            }, 300);
+                          }
+                          setResolveTaskId(null);
+                        }}
+                      />
                     )}
                   </CardContent>
                 </Card>

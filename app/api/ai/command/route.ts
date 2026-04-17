@@ -6,6 +6,13 @@ const CommandRequestSchema = z.object({
   text: z.string().min(1).max(500),
 });
 
+/** Wall clock in Asia/Kolkata as ISO-8601 with +05:30 (IST has no DST). */
+function currentTimeIsoIST(): string {
+  const d = new Date();
+  const wall = d.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' });
+  return `${wall.replace(' ', 'T')}+05:30`;
+}
+
 export async function POST(request: Request) {
   const guard = await requireRole(request, 'ai.command');
   if (guard) return guard;
@@ -26,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const currentTimeIso = new Date().toISOString();
+    const currentTimeIso = currentTimeIsoIST();
     const intent = await parseCommand(parsed.data.text, currentTimeIso);
 
     return Response.json({

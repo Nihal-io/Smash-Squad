@@ -154,7 +154,10 @@ export function CommandBar({ onTaskCreated }: CommandBarProps) {
                   {intent.intent === 'create_task' && (
                     <>
                       <p><span className="text-muted-foreground">Name:</span> {intent.params.name}</p>
-                      <p><span className="text-muted-foreground">Time:</span> {new Date(intent.params.slot_start_iso).toLocaleString()} – {new Date(intent.params.slot_end_iso).toLocaleTimeString()}</p>
+                      <p className="break-words">
+                        <span className="text-muted-foreground">Time:</span> {intent.params.slot_start_iso} –{' '}
+                        {intent.params.slot_end_iso}
+                      </p>
                       <p><span className="text-muted-foreground">Volunteers:</span> {intent.params.volunteers_needed}</p>
                       {intent.params.skills_required.length > 0 && (
                         <p><span className="text-muted-foreground">Skills:</span> {intent.params.skills_required.join(', ')}</p>
