@@ -1,47 +1,24 @@
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { requireRole } from '@/lib/rbac/guard';
 import { createClient } from '@/lib/supabase/server';
 import { reconcileTask } from '@/lib/assignment/engine';
 import { generateMovePool, type CandidateMove } from '@/lib/assignment/move-generator';
-import { proposeResolutions, type ResolutionResult } from '@/lib/ai/propose-resolutions';
 import { getNotifier } from '@/lib/notifications';
 import type { Notification } from '@/lib/notifications/types';
+import {
+  assignmentNotification,
+  type TemplateTask,
+  type TemplateVolunteer,
+} from '@/lib/notifications/templates';
+
+type SB = SupabaseClient<Database>;
 
 const ApplySchema = z.object({
   task_id: z.string().uuid(),
   apply_move_ids: z.array(z.number()).min(1),
 });
-
-function buildFallbackResolutions(moves: CandidateMove[]): ResolutionResult {
-  const n = Math.min(3, moves.length);
-  const options = moves.slice(0, n).map((m, i) => ({
-    selected_move_ids: [m.id],
-    title: m.type === 'time_shift' ? 'Shift time window' : m.type === 'reassign' ? 'Reassign volunteer' : 'Partial skill match',
-    tradeoff: m.impact.slice(0, 120),
-    confidence: 'medium' as const,
-    recommended: i === 0,
-  }));
-
-  if (options.length === 0) {
-    return {
-      options: [
-        {
-          selected_move_ids: [],
-          title: 'No automated options',
-          tradeoff: 'Add volunteers manually or edit the task.',
-          confidence: 'low',
-          recommended: true,
-        },
-      ],
-      assessment: 'No candidate moves were available to rank.',
-    };
-  }
-
-  return {
-    options,
-    assessment: 'LLM ranking unavailable — showing raw candidate moves one per option.',
-  };
-}
 
 export async function POST(request: Request) {
   const guard = await requireRole(request, 'tasks.edit');
@@ -68,6 +45,36 @@ export async function POST(request: Request) {
   }
 
   return generateOptions(genParsed.data.task_id);
+}
+
+async function fetchVolunteerForNotify(
+  supabase: SB,
+  volunteerId: string
+): Promise<TemplateVolunteer | null> {
+  const { data } = await supabase
+    .from('volunteers')
+    .select('profiles:profile_id(full_name, email)')
+    .eq('id', volunteerId)
+    .single();
+  const raw = data?.profiles;
+  const profile = Array.isArray(raw) ? raw[0] : raw;
+  if (!profile?.full_name || !profile?.email) return null;
+  return { full_name: profile.full_name, email: profile.email };
+}
+
+async function fetchTaskTemplate(supabase: SB, taskId: string): Promise<TemplateTask | null> {
+  const { data } = await supabase
+    .from('tasks')
+    .select('name, slot_start, slot_end, skills_required')
+    .eq('id', taskId)
+    .single();
+  if (!data) return null;
+  return {
+    name: data.name,
+    slot_start: data.slot_start,
+    slot_end: data.slot_end,
+    skills_required: data.skills_required ?? [],
+  };
 }
 
 async function generateOptions(taskId: string) {
@@ -100,44 +107,23 @@ async function generateOptions(taskId: string) {
     return Response.json({ ok: false, reason: 'no resolution options' });
   }
 
-  const failingTask = {
-    name: task.name,
-    needs,
-    has,
-    skills: task.skills_required ?? [],
-  };
+  const options = moves.map((move, idx) => ({
+    // UI-consumed shape
+    selected_move_ids: [move.id],
+    title: move.type,
+    tradeoff: move.impact,
+    confidence: 'medium' as const,
+    recommended: idx === 0,
+    // Extra deterministic fields requested for clarity
+    description: move.description,
+    impact: move.impact,
+    move_ids: [move.id],
+  }));
 
-  let resolutions: ResolutionResult;
-  try {
-    resolutions = await proposeResolutions(failingTask, moves);
-    const moveIds = new Set(moves.map((m) => m.id));
-    resolutions = {
-      ...resolutions,
-      options: resolutions.options
-        .map((opt) => ({
-          ...opt,
-          selected_move_ids: opt.selected_move_ids.filter((id) => moveIds.has(id)),
-        }))
-        .filter((opt) => opt.selected_move_ids.length > 0),
-    };
-    if (resolutions.options.length === 0) {
-      resolutions = buildFallbackResolutions(moves);
-    } else {
-      const recCount = resolutions.options.filter((o) => o.recommended).length;
-      if (recCount !== 1) {
-        resolutions = {
-          ...resolutions,
-          options: resolutions.options.map((o, i) => ({
-            ...o,
-            recommended: i === 0,
-          })),
-        };
-      }
-    }
-  } catch (err) {
-    console.error('[resolve-conflict] LLM failed:', err);
-    resolutions = buildFallbackResolutions(moves);
-  }
+  const resolutions = {
+    options,
+    assessment: `Task needs ${needs} volunteers, has ${has}. Found ${moves.length} possible moves.`,
+  };
 
   return Response.json({
     ok: true,
@@ -194,23 +180,56 @@ async function executeApply(data: z.infer<typeof ApplySchema>) {
     } else if (move.type === 'reassign') {
       if (!move.volunteer_id || !move.source_task_id) continue;
 
-      await supabase
+      const { data: src } = await supabase
         .from('assignments')
-        .delete()
+        .select('id')
         .eq('task_id', move.source_task_id)
         .eq('volunteer_id', move.volunteer_id)
-        .eq('status', 'assigned');
+        .eq('status', 'assigned')
+        .maybeSingle();
 
-      await supabase.from('assignments').insert({
+      if (!src) {
+        summary.push(
+          `Could not find an active assignment for ${move.volunteer_name ?? 'volunteer'} on the source task.`
+        );
+        continue;
+      }
+
+      const { error: dropErr } = await supabase
+        .from('assignments')
+        .update({
+          status: 'dropped',
+          dropped_at: new Date().toISOString(),
+          drop_reason: 'Reassigned by coordinator to resolve staffing shortage',
+        })
+        .eq('id', src.id);
+
+      if (dropErr) {
+        summary.push(`Failed to drop source assignment: ${dropErr.message}`);
+        continue;
+      }
+
+      const { error: insErr } = await supabase.from('assignments').insert({
         task_id,
         volunteer_id: move.volunteer_id,
         status: 'assigned',
         assigned_at: new Date().toISOString(),
       });
 
+      if (insErr) {
+        summary.push(`Failed to assign to target task: ${insErr.message}`);
+        continue;
+      }
+
       summary.push(
         `Moved ${move.volunteer_name ?? 'volunteer'} from "${move.source_task_name ?? 'source'}" to this task.`
       );
+
+      const vol = await fetchVolunteerForNotify(supabase, move.volunteer_id);
+      const taskT = await fetchTaskTemplate(supabase, task_id);
+      if (vol && taskT) {
+        notifications.push(assignmentNotification(vol, taskT));
+      }
 
       const rSource = await reconcileTask(move.source_task_id, supabase);
       const rTarget = await reconcileTask(task_id, supabase);
@@ -218,14 +237,26 @@ async function executeApply(data: z.infer<typeof ApplySchema>) {
     } else if (move.type === 'partial_match') {
       if (!move.volunteer_id) continue;
 
-      await supabase.from('assignments').insert({
+      const { error: insErr } = await supabase.from('assignments').insert({
         task_id,
         volunteer_id: move.volunteer_id,
         status: 'assigned',
         assigned_at: new Date().toISOString(),
       });
 
+      if (insErr) {
+        summary.push(`Failed to assign to target task: ${insErr.message}`);
+        continue;
+      }
+
       summary.push(`Assigned ${move.volunteer_name ?? 'volunteer'} (partial skill match).`);
+
+      const vol = await fetchVolunteerForNotify(supabase, move.volunteer_id);
+      const taskT = await fetchTaskTemplate(supabase, task_id);
+      if (vol && taskT) {
+        notifications.push(assignmentNotification(vol, taskT));
+      }
+
       const r = await reconcileTask(task_id, supabase);
       notifications.push(...r.notifications);
     }

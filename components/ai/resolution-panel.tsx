@@ -33,10 +33,15 @@ export function ResolutionPanel({ taskId, onResolved }: ResolutionPanelProps) {
   const [loading, setLoading] = useState(false);
   const [applyingIdx, setApplyingIdx] = useState<number | null>(null);
   const [data, setData] = useState<GenerateResponse | null>(null);
+  /** Kept alongside resolutions so option `selected_move_ids` always map to real moves for display and apply. */
+  const [moves, setMoves] = useState<CandidateMove[]>([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setData(null);
+    setMoves([]);
+    setSuccessMessage(null);
     try {
       const res = await devFetch('/api/ai/resolve-conflict', {
         method: 'POST',
@@ -52,6 +57,7 @@ export function ResolutionPanel({ taskId, onResolved }: ResolutionPanelProps) {
         return;
       }
       setData(json);
+      setMoves(json.moves ?? []);
     } catch {
       toast.error('Failed to load resolutions');
     } finally {
@@ -61,23 +67,32 @@ export function ResolutionPanel({ taskId, onResolved }: ResolutionPanelProps) {
 
   const apply = async (moveIds: number[], optionIdx: number) => {
     setApplyingIdx(optionIdx);
+    setSuccessMessage(null);
     try {
       const res = await devFetch('/api/ai/resolve-conflict', {
         method: 'POST',
         body: JSON.stringify({ task_id: taskId, apply_move_ids: moveIds }),
       });
-      const json = await res.json();
-      if (!res.ok) {
+      const json = (await res.json()) as {
+        ok?: boolean;
+        summary?: string;
+        reason?: string;
+        error?: string;
+      };
+      if (!res.ok || json.ok === false) {
         toast.error(json.reason || json.error || 'Apply failed');
         return;
       }
-      toast.success(json.summary || 'Resolution applied');
+      const summary = typeof json.summary === 'string' ? json.summary : 'Resolution applied';
+      toast.success(summary);
+      setSuccessMessage(summary);
       setData(null);
+      setMoves([]);
       onResolved();
     } catch {
       toast.error('Apply failed');
     } finally {
-      setApplying(null);
+      setApplyingIdx(null);
     }
   };
 
@@ -114,6 +129,12 @@ export function ResolutionPanel({ taskId, onResolved }: ResolutionPanelProps) {
           </p>
         )}
 
+        {successMessage && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+            {successMessage}
+          </div>
+        )}
+
         {data?.resolutions && (
           <div className="space-y-3">
             {data.resolutions.assessment && (
@@ -138,8 +159,13 @@ export function ResolutionPanel({ taskId, onResolved }: ResolutionPanelProps) {
                   </div>
                   <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
                     {opt.selected_move_ids.map((mid) => {
-                      const m = data.moves?.find((x) => x.id === mid);
-                      return m ? <li key={mid}>{m.description}</li> : null;
+                      const pool = moves.length > 0 ? moves : data.moves ?? [];
+                      const m = pool.find((x) => x.id === mid);
+                      return (
+                        <li key={`${idx}-${mid}`}>
+                          {m?.description ?? `Move #${mid} (not in current pool — regenerate options)`}
+                        </li>
+                      );
                     })}
                   </ul>
                   <p className="text-xs italic text-muted-foreground">{opt.tradeoff}</p>
