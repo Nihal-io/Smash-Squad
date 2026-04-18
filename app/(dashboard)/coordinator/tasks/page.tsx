@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Plus, Table, CalendarDays, Trash2 } from 'lucide-react';
+import { Plus, Table, CalendarDays, Trash2, Pencil } from 'lucide-react';
 import { CommandBar } from '@/components/ai/command-bar';
 import { ResolutionPanel } from '@/components/ai/resolution-panel';
 import { TaskCalendar } from '@/components/tasks/task-calendar';
@@ -165,6 +165,15 @@ export default function TasksPage() {
   // Assignment detail state - shared between table and calendar
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [resolveTaskId, setResolveTaskId] = useState<string | null>(null);
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState<{
+    volunteers_needed: number | '';
+    skills_required: string;
+  }>({
+    volunteers_needed: '',
+    skills_required: '',
+  });
   const [assignments, setAssignments] = useState<AssignmentRow[]>([]);
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [promotedAssignmentIds, setPromotedAssignmentIds] = useState<Set<string>>(new Set());
@@ -259,6 +268,74 @@ export default function TasksPage() {
     } catch {
       promotionSnapshotRef.current = null;
       toast.error('Something went wrong');
+    }
+  };
+
+  const parseSkills = (skillsText: string) =>
+    skillsText
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
+  const beginEdit = (task: Task) => {
+    setEditTaskId(task.id);
+    setEditForm({
+      volunteers_needed: task.volunteers_needed,
+      skills_required: task.skills_required.join(', '),
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditTaskId(null);
+    setEditForm({ volunteers_needed: '', skills_required: '' });
+  };
+
+  const saveEdit = async (task: Task) => {
+    const volunteersNeeded =
+      editForm.volunteers_needed === '' ? NaN : editForm.volunteers_needed;
+    if (!Number.isFinite(volunteersNeeded) || volunteersNeeded < 1) {
+      toast.error('Volunteers needed must be at least 1');
+      return;
+    }
+
+    const nextSkills = parseSkills(editForm.skills_required);
+    const prevSkills = task.skills_required.map((s) => s.toLowerCase());
+    const payload: {
+      volunteers_needed?: number;
+      skills_required?: string[];
+    } = {};
+
+    if (volunteersNeeded !== task.volunteers_needed) {
+      payload.volunteers_needed = volunteersNeeded;
+    }
+    if (nextSkills.join('|') !== prevSkills.join('|')) {
+      payload.skills_required = nextSkills;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      toast.message('No changes to save');
+      cancelEdit();
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await devFetch(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to update task');
+        return;
+      }
+      toast.success('Task updated');
+      cancelEdit();
+      void fetchTasks();
+    } catch {
+      toast.error('Something went wrong');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -378,7 +455,26 @@ export default function TasksPage() {
                       onClick={() => loadAssignments(t.id)}
                     >
                       <div>
-                        <p className="font-medium">{t.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{t.name}</p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                            aria-label={`Edit ${t.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (editTaskId === t.id) {
+                                cancelEdit();
+                              } else {
+                                beginEdit(t);
+                              }
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           {format(new Date(t.slot_start), 'MMM d, h:mm a')} -{' '}
                           {format(new Date(t.slot_end), 'h:mm a')}
@@ -390,6 +486,60 @@ export default function TasksPage() {
                             </Badge>
                           ))}
                         </div>
+                        {editTaskId === t.id && (
+                          <div
+                            className="mt-3 rounded-md border bg-background p-3 space-y-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div>
+                                <Label className="text-xs">Volunteers Needed</Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={editForm.volunteers_needed === '' ? '' : editForm.volunteers_needed}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    if (v === '') {
+                                      setEditForm((prev) => ({ ...prev, volunteers_needed: '' }));
+                                      return;
+                                    }
+                                    const n = parseInt(v, 10);
+                                    if (!Number.isNaN(n)) {
+                                      setEditForm((prev) => ({ ...prev, volunteers_needed: n }));
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Skills Required</Label>
+                                <Input
+                                  value={editForm.skills_required}
+                                  onChange={(e) =>
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      skills_required: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="electrical, logistics"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => void saveEdit(t)}
+                                disabled={savingEdit}
+                              >
+                                {savingEdit ? 'Saving...' : 'Save'}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={savingEdit}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div
                         className="text-right flex flex-col items-end gap-1.5"
